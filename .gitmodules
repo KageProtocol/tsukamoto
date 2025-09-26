@@ -1,0 +1,3 @@
+[submodule "aztec-otc-desk/deps/aztec-standards"]
+	path = aztec-otc-desk/deps/aztec-standards
+	url = https://github.com/defi-wonderland/aztec-standards.git
