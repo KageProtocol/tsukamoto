@@ -16,13 +16,22 @@ export default function Home() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [actionMsg, setActionMsg] = useState<string | null>(null);
+  const [filters, setFilters] = useState({
+    sell: "",
+    buy: "",
+    page: 0,
+    pageSize: 10,
+  });
   const apiUrl = "/api/orders"; // use internal proxy to avoid CORS
 
   const fetchOrders = async () => {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch(apiUrl);
+      const qs = new URLSearchParams();
+      if (filters.sell) qs.set("sell_token_address", filters.sell);
+      if (filters.buy) qs.set("buy_token_address", filters.buy);
+      const res = await fetch(`${apiUrl}?${qs.toString()}`);
       const json = await res.json();
       if (!json.success) throw new Error(json.error || "Failed to fetch");
       setOrders(json.data || []);
@@ -78,6 +87,21 @@ export default function Home() {
       <button onClick={fetchOrders} disabled={loading}>
         {loading ? "Refreshing..." : "Refresh"}
       </button>
+      <div style={{ marginTop: 12, display: "flex", gap: 8 }}>
+        <input
+          placeholder="Sell token address"
+          value={filters.sell}
+          onChange={(e) => setFilters({ ...filters, sell: e.target.value })}
+          style={{ width: 360 }}
+        />
+        <input
+          placeholder="Buy token address"
+          value={filters.buy}
+          onChange={(e) => setFilters({ ...filters, buy: e.target.value })}
+          style={{ width: 360 }}
+        />
+        <button onClick={fetchOrders}>Apply Filters</button>
+      </div>
       {error && <p style={{ color: "crimson" }}>Error: {error}</p>}
       <ul style={{ listStyle: "none", padding: 0 }}>
         {orders.map((o) => (
@@ -99,6 +123,23 @@ export default function Home() {
             </div>
             <button style={{ marginTop: 8 }} onClick={() => fillOrder(o)}>
               Fetch fill details
+            </button>
+            <button
+              style={{ marginLeft: 8 }}
+              onClick={async () => {
+                setActionMsg(null);
+                const res = await fetch("/api/fill/execute", {
+                  method: "POST",
+                  headers: { "content-type": "application/json" },
+                  body: JSON.stringify({ orderId: o.orderId }),
+                });
+                const json = await res.json();
+                if (!json.success) setActionMsg(`Execute error: ${json.error}`);
+                else
+                  setActionMsg("Executed local fill_by_id. Check server logs.");
+              }}
+            >
+              Execute Local Fill
             </button>
           </li>
         ))}

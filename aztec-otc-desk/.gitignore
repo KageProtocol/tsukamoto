@@ -23,3 +23,11 @@ cache
 
 pxe-data
 pxe
+*.sqlite
+**/*.pem
+**/*.key
+**/*.p12
+**/wallet.json
+**/keystore/**
+**/keystores/**
+roadmap.md
