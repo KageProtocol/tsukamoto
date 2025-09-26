@@ -40,7 +40,7 @@ export interface IDatabase {
    * Removes an order once it has been fulfilled
    * @NOTE: needs authentication mechanism - probably checking for existence of nullifier
    * @NOTE: should be able to either use escrow address or order id to close
-   * 
+   *
    * @param orderId - the order ID to delete
    */
   closeOrder(orderId: string): boolean;
@@ -58,11 +58,14 @@ export interface IDatabase {
   /**
    * Get orders with flexible filtering
    */
-  getOrdersWithFilters(filters: {
-    escrowAddress?: string;
-    sellTokenAddress?: string;
-    buyTokenAddress?: string;
-  }): Order[];
+  getOrdersWithFilters(
+    filters: {
+      escrowAddress?: string;
+      sellTokenAddress?: string;
+      buyTokenAddress?: string;
+    },
+    options?: { limit?: number; offset?: number },
+  ): Order[];
 
   /**
    * Close database connection (if applicable)

@@ -167,13 +167,16 @@ export class SQLiteDatabase implements IDatabase {
   /**
    * Get orders with flexible filtering
    */
-  getOrdersWithFilters(filters: {
-    escrowAddress?: string;
-    sellTokenAddress?: string;
-    buyTokenAddress?: string;
-  }): Order[] {
+  getOrdersWithFilters(
+    filters: {
+      escrowAddress?: string;
+      sellTokenAddress?: string;
+      buyTokenAddress?: string;
+    },
+    options?: { limit?: number; offset?: number },
+  ): Order[] {
     let query = "SELECT * FROM orders WHERE 1=1";
-    const params: string[] = [];
+    const params: (string | number)[] = [];
 
     if (filters.escrowAddress) {
       query += " AND escrowAddress = ?";
@@ -193,6 +196,14 @@ export class SQLiteDatabase implements IDatabase {
     query += " AND (status = 'open')";
     query += " AND (expiresAt IS NULL OR expiresAt > strftime('%s','now'))";
     query += " ORDER BY createdAt DESC";
+    if (options?.limit) {
+      query += " LIMIT ?";
+      params.push(options.limit);
+    }
+    if (options?.offset) {
+      query += " OFFSET ?";
+      params.push(options.offset);
+    }
 
     const stmt = this.db.prepare(query);
     const rows = stmt.all(...params) as any[];

@@ -101,6 +101,8 @@ export function createOrderHandlers(database: IDatabase) {
       const buyTokenAddress = url.searchParams.get("buy_token_address");
       const includeSensitive =
         url.searchParams.get("include_sensitive") === "true";
+      const limit = url.searchParams.get("limit");
+      const offset = url.searchParams.get("offset");
 
       if (includeSensitive) {
         const res = requireHmacAuth(req, "");
@@ -136,7 +138,10 @@ export function createOrderHandlers(database: IDatabase) {
         if (sellTokenAddress) filters.sellTokenAddress = sellTokenAddress;
         if (buyTokenAddress) filters.buyTokenAddress = buyTokenAddress;
 
-        orders = database.getOrdersWithFilters(filters);
+        orders = database.getOrdersWithFilters(filters, {
+          limit: limit ? Number(limit) : undefined,
+          offset: offset ? Number(offset) : undefined,
+        });
 
         const filterDescriptions: string[] = [];
         if (escrowAddress) filterDescriptions.push(`escrow: ${escrowAddress}`);
