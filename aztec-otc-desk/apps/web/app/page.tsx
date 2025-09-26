@@ -20,6 +20,7 @@ export default function Home() {
     type: "success" | "error";
     msg: string;
   } | null>(null);
+  const [executingId, setExecutingId] = useState<string | null>(null);
   const [filters, setFilters] = useState({
     sell: "",
     buy: "",
@@ -149,6 +150,7 @@ export default function Home() {
               style={{ marginLeft: 8 }}
               onClick={async () => {
                 setActionMsg(null);
+                setExecutingId(o.orderId);
                 const res = await fetch("/api/fill/execute", {
                   method: "POST",
                   headers: { "content-type": "application/json" },
@@ -161,10 +163,15 @@ export default function Home() {
                 } else {
                   setActionMsg("Executed local fill_by_id. Check server logs.");
                   setToast({ type: "success", msg: "Local fill executed" });
+                  await fetchOrders();
                 }
+                setExecutingId(null);
               }}
+              disabled={executingId === o.orderId}
             >
-              Execute Local Fill
+              {executingId === o.orderId
+                ? "Executing..."
+                : "Execute Local Fill"}
             </button>
           </li>
         ))}
