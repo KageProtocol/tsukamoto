@@ -28,6 +28,8 @@ export class SQLiteDatabase implements IDatabase {
         sellTokenAmount TEXT NOT NULL,
         buyTokenAddress TEXT NOT NULL,
         buyTokenAmount TEXT NOT NULL,
+        status TEXT DEFAULT 'open',
+        expiresAt INTEGER,
         createdAt DATETIME DEFAULT CURRENT_TIMESTAMP
       )
     `);
@@ -37,7 +39,9 @@ export class SQLiteDatabase implements IDatabase {
    * Check if an escrow address already exists
    */
   escrowAddressExists(escrowAddress: string): boolean {
-    const stmt = this.db.prepare("SELECT COUNT(*) as count FROM orders WHERE escrowAddress = ?");
+    const stmt = this.db.prepare(
+      "SELECT COUNT(*) as count FROM orders WHERE escrowAddress = ?",
+    );
     const result = stmt.get(escrowAddress) as { count: number };
     return result.count > 0;
   }
@@ -48,14 +52,16 @@ export class SQLiteDatabase implements IDatabase {
   insertOrder(order: Order): Order {
     // Check if escrow address already exists
     if (this.escrowAddressExists(order.escrowAddress)) {
-      throw new Error(`Order with escrow address ${order.escrowAddress} already exists`);
+      throw new Error(
+        `Order with escrow address ${order.escrowAddress} already exists`,
+      );
     }
-    
+
     const stmt = this.db.prepare(`
       INSERT INTO orders (orderId, escrowAddress, contractInstance, secretKey, partialAddress, sellTokenAddress, sellTokenAmount, buyTokenAddress, buyTokenAmount)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
-    
+
     try {
       stmt.run(
         order.orderId,
@@ -66,13 +72,18 @@ export class SQLiteDatabase implements IDatabase {
         order.sellTokenAddress,
         order.sellTokenAmount.toString(), // Convert BigInt to string for storage
         order.buyTokenAddress,
-        order.buyTokenAmount.toString()   // Convert BigInt to string for storage
+        order.buyTokenAmount.toString(), // Convert BigInt to string for storage
       );
-      
+
       return order;
     } catch (error) {
-      if (error instanceof Error && error.message.includes('UNIQUE constraint failed')) {
-        throw new Error(`Order with escrow address ${order.escrowAddress} already exists`);
+      if (
+        error instanceof Error &&
+        error.message.includes("UNIQUE constraint failed")
+      ) {
+        throw new Error(
+          `Order with escrow address ${order.escrowAddress} already exists`,
+        );
       }
       throw error;
     }
@@ -84,9 +95,9 @@ export class SQLiteDatabase implements IDatabase {
   getOrderById(orderId: string): Order | null {
     const stmt = this.db.prepare("SELECT * FROM orders WHERE orderId = ?");
     const row = stmt.get(orderId) as any;
-    
+
     if (!row) return null;
-    
+
     return this.mapRowToOrder(row);
   }
 
@@ -94,11 +105,13 @@ export class SQLiteDatabase implements IDatabase {
    * Get order by escrow address
    */
   getOrderByEscrowAddress(escrowAddress: string): Order | null {
-    const stmt = this.db.prepare("SELECT * FROM orders WHERE escrowAddress = ?");
+    const stmt = this.db.prepare(
+      "SELECT * FROM orders WHERE escrowAddress = ?",
+    );
     const row = stmt.get(escrowAddress) as any;
-    
+
     if (!row) return null;
-    
+
     return this.mapRowToOrder(row);
   }
 
@@ -106,17 +119,19 @@ export class SQLiteDatabase implements IDatabase {
    * Get all orders
    */
   getAllOrders(): Order[] {
-    const stmt = this.db.prepare("SELECT * FROM orders ORDER BY createdAt DESC");
+    const stmt = this.db.prepare(
+      "SELECT * FROM orders ORDER BY createdAt DESC",
+    );
     const rows = stmt.all() as any[];
-    
-    return rows.map(row => this.mapRowToOrder(row));
+
+    return rows.map((row) => this.mapRowToOrder(row));
   }
 
   /**
    * Removes an order once it has been fulfilled
    * @NOTE: needs authentication mechanism - probably checking for existence of nullifier
    * @NOTE: should be able to either use escrow address or order id to close
-   * 
+   *
    * @param orderId - the order ID to delete
    */
   closeOrder(orderId: string): boolean {
@@ -129,20 +144,24 @@ export class SQLiteDatabase implements IDatabase {
    * Get orders by sell token address
    */
   getOrdersBySellToken(sellTokenAddress: string): Order[] {
-    const stmt = this.db.prepare("SELECT * FROM orders WHERE sellTokenAddress = ? ORDER BY createdAt DESC");
+    const stmt = this.db.prepare(
+      "SELECT * FROM orders WHERE sellTokenAddress = ? ORDER BY createdAt DESC",
+    );
     const rows = stmt.all(sellTokenAddress) as any[];
-    
-    return rows.map(row => this.mapRowToOrder(row));
+
+    return rows.map((row) => this.mapRowToOrder(row));
   }
 
   /**
    * Get orders by buy token address
    */
   getOrdersByBuyToken(buyTokenAddress: string): Order[] {
-    const stmt = this.db.prepare("SELECT * FROM orders WHERE buyTokenAddress = ? ORDER BY createdAt DESC");
+    const stmt = this.db.prepare(
+      "SELECT * FROM orders WHERE buyTokenAddress = ? ORDER BY createdAt DESC",
+    );
     const rows = stmt.all(buyTokenAddress) as any[];
-    
-    return rows.map(row => this.mapRowToOrder(row));
+
+    return rows.map((row) => this.mapRowToOrder(row));
   }
 
   /**
@@ -171,12 +190,14 @@ export class SQLiteDatabase implements IDatabase {
       params.push(filters.buyTokenAddress);
     }
 
+    query += " AND (status = 'open')";
+    query += " AND (expiresAt IS NULL OR expiresAt > strftime('%s','now'))";
     query += " ORDER BY createdAt DESC";
 
     const stmt = this.db.prepare(query);
     const rows = stmt.all(...params) as any[];
-    
-    return rows.map(row => this.mapRowToOrder(row));
+
+    return rows.map((row) => this.mapRowToOrder(row));
   }
 
   /**
@@ -199,7 +220,9 @@ export class SQLiteDatabase implements IDatabase {
       sellTokenAddress: row.sellTokenAddress,
       sellTokenAmount: BigInt(row.sellTokenAmount), // Convert string back to BigInt
       buyTokenAddress: row.buyTokenAddress,
-      buyTokenAmount: BigInt(row.buyTokenAmount)    // Convert string back to BigInt
+      buyTokenAmount: BigInt(row.buyTokenAmount), // Convert string back to BigInt
+      status: row.status as any,
+      expiresAt: row.expiresAt ? Number(row.expiresAt) : undefined,
     };
   }
 }

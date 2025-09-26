@@ -1,53 +1,76 @@
 import {
-    AccountWalletWithSecretKey,
-    AztecAddress,
-    type ContractInstanceWithAddress,
-    Fr,
-    type PXE,
+  AccountWalletWithSecretKey,
+  AztecAddress,
+  type ContractInstanceWithAddress,
+  Fr,
+  type PXE,
 } from "@aztec/aztec.js";
 import { ContractInstanceWithAddressSchema } from "@aztec/stdlib/contract";
-import { OTCEscrowContract, getEscrowContract } from "@aztec-otc-desk/contracts";
+import {
+  OTCEscrowContract,
+  getEscrowContract,
+} from "@aztec-otc-desk/contracts";
 import type { Order } from "../../../orderflow-service/src/types/api";
 import {
-    eth as ethDeployment,
-    usdc as usdcDeployment
-} from "../data/deployments.json"
+  eth as ethDeployment,
+  usdc as usdcDeployment,
+} from "../data/deployments.json";
 import type { OrderAPIResponse } from "./types";
+import crypto from "crypto";
+
+const getEnv = (k: string, d?: string) => process.env[k] ?? d;
+const sign = (method: string, path: string, body: string, secret: string) => {
+  const ts = Math.floor(Date.now() / 1000).toString();
+  const payload = [method.toUpperCase(), path, ts, body].join("\n");
+  const sig = crypto.createHmac("sha256", secret).update(payload).digest("hex");
+  return { ts, sig };
+};
 
 /**
  * Fetch orders from the API
  * @param apiUrl The base URL of the orderflow API
- * 
+ *
  * @returns Open orders fetched from the API
  */
 export const getOrders = async (apiUrl: string): Promise<Order[]> => {
-    // get an order from the database
-    // do this first to fail if no order found
-    let orders: Order[];
+  // get an order from the database
+  // do this first to fail if no order found
+  let orders: Order[];
+  try {
+    const path = "/order";
+    const fullURL =
+      `${apiUrl}${path}` +
+      `?include_sensitive=true` +
+      `&buy_token_address=${usdcDeployment.address}` +
+      `&sell_token_address=${ethDeployment.address}`;
+    const secret = getEnv("API_HMAC_SECRET");
+    if (!secret) throw new Error("API_HMAC_SECRET not set in environment");
+    const { ts, sig } = sign("GET", path, "", secret);
+    const res = await fetch(fullURL, {
+      method: "GET",
+      headers: { "x-timestamp": ts, "x-signature": sig },
+    });
+    if (!res.ok) {
+      throw new Error("Failed to fetch orders");
+    }
     try {
-        const fullURL = `${apiUrl}/order`
-            + `?buy_token_address=${usdcDeployment.address}`
-            + `&sell_token_address=${ethDeployment.address}`;
-        const res = await fetch(fullURL, { method: "GET" });
-        if (!res.ok) {
-            throw new Error("Failed to fetch orders");
-        }
-        try {
-            const data: OrderAPIResponse = await res.json() as OrderAPIResponse;
-            orders = data.data;
-        } catch (err) {
-            throw new Error("Error parsing orders from API: " + (err as Error).message);
-        }
+      const data: OrderAPIResponse = (await res.json()) as OrderAPIResponse;
+      orders = data.data;
     } catch (err) {
-        throw new Error("Error fetching orders: " + (err as Error).message);
+      throw new Error(
+        "Error parsing orders from API: " + (err as Error).message,
+      );
     }
+  } catch (err) {
+    throw new Error("Error fetching orders: " + (err as Error).message);
+  }
 
-    if (orders.length === 0) {
-        throw new Error("No orders found");
-    }
+  if (orders.length === 0) {
+    throw new Error("No orders found");
+  }
 
-    return orders;
-}
+  return orders;
+};
 
 /**
  * Create a new order
@@ -62,91 +85,108 @@ export const getOrders = async (apiUrl: string): Promise<Order[]> => {
  * @param apiUrl The base URL of the orderflow API
  */
 export const createOrder = async (
-    escrowAddress: AztecAddress | string,
-    contractInstance: ContractInstanceWithAddress,
-    secretKey: Fr,
-    partialaAddress: Fr,
-    sellTokenAddress: AztecAddress | string,
-    sellTokenAmount: bigint,
-    buyTokenAddress: AztecAddress | string,
-    buyTokenAmount: bigint,
-    apiUrl: string
+  escrowAddress: AztecAddress | string,
+  contractInstance: ContractInstanceWithAddress,
+  secretKey: Fr,
+  partialaAddress: Fr,
+  sellTokenAddress: AztecAddress | string,
+  sellTokenAmount: bigint,
+  buyTokenAddress: AztecAddress | string,
+  buyTokenAmount: bigint,
+  apiUrl: string,
 ) => {
-    // parse inputs
-    if (typeof escrowAddress === "string") {
-        escrowAddress = AztecAddress.fromString(escrowAddress);
+  // parse inputs
+  if (typeof escrowAddress === "string") {
+    escrowAddress = AztecAddress.fromString(escrowAddress);
+  }
+  if (typeof partialaAddress === "string") {
+    partialaAddress = Fr.fromString(partialaAddress);
+  }
+  if (typeof sellTokenAddress === "string") {
+    sellTokenAddress = AztecAddress.fromString(sellTokenAddress);
+  }
+  if (typeof buyTokenAddress === "string") {
+    buyTokenAddress = AztecAddress.fromString(buyTokenAddress);
+  }
+  // build the request body
+  const payload = {
+    escrowAddress: escrowAddress.toString(),
+    contractInstance: JSON.stringify(contractInstance),
+    secretKey: secretKey.toString(),
+    partialAddress: partialaAddress.toString(),
+    sellTokenAddress: sellTokenAddress.toString(),
+    sellTokenAmount: sellTokenAmount.toString(),
+    buyTokenAddress: buyTokenAddress.toString(),
+    buyTokenAmount: buyTokenAmount.toString(),
+  };
+  // post request to add order to api
+  try {
+    const path = "/order";
+    const body = JSON.stringify(payload);
+    const secret = getEnv("API_HMAC_SECRET");
+    if (!secret) throw new Error("API_HMAC_SECRET not set in environment");
+    const { ts, sig } = sign("POST", path, body, secret);
+    const res = await fetch(`${apiUrl}${path}`, {
+      method: "POST",
+      body,
+      headers: {
+        "content-type": "application/json",
+        "x-timestamp": ts,
+        "x-signature": sig,
+      },
+    });
+    if (!res.ok) {
+      throw new Error("Failed to fetch health status");
     }
-    if (typeof partialaAddress === "string") {
-        partialaAddress = Fr.fromString(partialaAddress);
-    }
-    if (typeof sellTokenAddress === "string") {
-        sellTokenAddress = AztecAddress.fromString(sellTokenAddress);
-    }
-    if (typeof buyTokenAddress === "string") {
-        buyTokenAddress = AztecAddress.fromString(buyTokenAddress);
-    }
-    // build the request body
-    const payload = {
-        escrowAddress: escrowAddress.toString(),
-        contractInstance: JSON.stringify(contractInstance),
-        secretKey: secretKey.toString(),
-        partialAddress: partialaAddress.toString(),
-        sellTokenAddress: sellTokenAddress.toString(),
-        sellTokenAmount: sellTokenAmount.toString(),
-        buyTokenAddress: buyTokenAddress.toString(),
-        buyTokenAmount: buyTokenAmount.toString()
-    }
-    // post request to add order to api
-    try {
-        const fullURL = `${apiUrl}/order`;
-        const res = await fetch(fullURL,
-            { method: "POST", body: JSON.stringify(payload) }
-        );
-        if (!res.ok) {
-            throw new Error("Failed to fetch health status");
-        }
-        console.log("Order added to otc order service")
-    } catch (err) {
-        throw new Error("Error creating order: " + (err as Error).message);
-    }
-}
+    console.log("Order added to otc order service");
+  } catch (err) {
+    throw new Error("Error creating order: " + (err as Error).message);
+  }
+};
 
 /**
  * Close an order once filled using the ID
- * 
+ *
  * @param id The ID of the order to close
  * @param apiUrl The base URL of the orderflow API
  */
 export const closeOrder = async (id: string, apiUrl: string) => {
-    try {
-        const fullURL = `${apiUrl}/order?id=${id}`;
-        const res = await fetch(fullURL, { method: "DELETE" });
-        if (!res.ok) {
-            throw new Error("Unknown error closing filled order");
-        }
-        console.log("Order closed in OTC order service")
-    } catch (err) {
-        throw new Error("Error closing order: " + (err as Error).message);
+  try {
+    const path = "/order";
+    const fullURL = `${apiUrl}${path}?id=${id}`;
+    const secret = getEnv("API_HMAC_SECRET");
+    if (!secret) throw new Error("API_HMAC_SECRET not set in environment");
+    const { ts, sig } = sign("DELETE", path, "", secret);
+    const res = await fetch(fullURL, {
+      method: "DELETE",
+      headers: { "x-timestamp": ts, "x-signature": sig },
+    });
+    if (!res.ok) {
+      throw new Error("Unknown error closing filled order");
     }
-}
+    console.log("Order closed in OTC order service");
+  } catch (err) {
+    throw new Error("Error closing order: " + (err as Error).message);
+  }
+};
 
 export const escrowInstanceFromOrder = async (
-    pxe: PXE,
-    caller: AccountWalletWithSecretKey,
-    order: Order,
+  pxe: PXE,
+  caller: AccountWalletWithSecretKey,
+  order: Order,
 ): Promise<OTCEscrowContract> => {
-    const escrowContractInstance = ContractInstanceWithAddressSchema.parse(
-        JSON.parse(order.contractInstance)
-    );
-    const escrowSecretKey = Fr.fromString(order.secretKey);
-    const escrowPartialAddress = Fr.fromString(order.partialAddress);
-    const escrowAddress = AztecAddress.fromString(order.escrowAddress);
-    return await getEscrowContract(
-        pxe,
-        caller,
-        escrowAddress,
-        escrowContractInstance,
-        escrowSecretKey,
-        escrowPartialAddress
-    );
-}
+  const escrowContractInstance = ContractInstanceWithAddressSchema.parse(
+    JSON.parse(order.contractInstance),
+  );
+  const escrowSecretKey = Fr.fromString(order.secretKey);
+  const escrowPartialAddress = Fr.fromString(order.partialAddress);
+  const escrowAddress = AztecAddress.fromString(order.escrowAddress);
+  return await getEscrowContract(
+    pxe,
+    caller,
+    escrowAddress,
+    escrowContractInstance,
+    escrowSecretKey,
+    escrowPartialAddress,
+  );
+};

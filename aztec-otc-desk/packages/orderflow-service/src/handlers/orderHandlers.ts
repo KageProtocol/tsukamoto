@@ -1,7 +1,20 @@
-import type { RequestHandler, ApiResponse, OrderResponse, Order, CreateOrderRequest } from "../types/api";
+import type {
+  RequestHandler,
+  ApiResponse,
+  OrderResponse,
+  Order,
+  CreateOrderRequest,
+} from "../types/api";
 import type { IDatabase } from "../db";
 import { generateOrderId } from "../utils/uuid";
-import { stringifyWithBigInt, serializeOrder, serializeOrders } from "../utils/serialization";
+import {
+  stringifyWithBigInt,
+  serializeOrder,
+  serializeOrders,
+  serializeOrderPublic,
+  serializeOrdersPublic,
+} from "../utils/serialization";
+import { requireHmacAuth } from "../utils/auth";
 
 /**
  * Create order handlers with database dependency injection
@@ -10,10 +23,15 @@ export function createOrderHandlers(database: IDatabase) {
   /**
    * Handle POST /order - Create a new order
    */
-  const handleCreateOrder: RequestHandler = async (req: Request): Promise<Response> => {
+  const handleCreateOrder: RequestHandler = async (
+    req: Request,
+  ): Promise<Response> => {
     try {
-      // Parse the request body (excluding orderId)
-      const rawData = await req.json();
+      // Parse body with HMAC check
+      const rawBody = await req.text();
+      const res = requireHmacAuth(req, rawBody);
+      if (res) return res;
+      const rawData = JSON.parse(rawBody);
 
       // Convert string amounts to BigInt
       const createOrderData: CreateOrderRequest = {
@@ -24,7 +42,7 @@ export function createOrderHandlers(database: IDatabase) {
         sellTokenAddress: rawData.sellTokenAddress,
         sellTokenAmount: BigInt(rawData.sellTokenAmount),
         buyTokenAddress: rawData.buyTokenAddress,
-        buyTokenAmount: BigInt(rawData.buyTokenAmount)
+        buyTokenAmount: BigInt(rawData.buyTokenAmount),
       };
 
       // Generate a unique order ID
@@ -33,7 +51,7 @@ export function createOrderHandlers(database: IDatabase) {
       // Create the complete order object
       const order: Order = {
         orderId,
-        ...createOrderData
+        ...createOrderData,
       };
 
       // Save to database
@@ -42,48 +60,52 @@ export function createOrderHandlers(database: IDatabase) {
       const response: ApiResponse<any> = {
         success: true,
         message: "Order created successfully",
-        data: serializeOrder(savedOrder)
+        data: serializeOrder(savedOrder),
       };
       console.log(`Added order #${orderId} (address: ${order.escrowAddress})`);
-      return new Response(
-        JSON.stringify(response),
-        {
-          status: 200,
-          headers: { "Content-Type": "application/json" }
-        }
-      );
+      return new Response(JSON.stringify(response), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
     } catch (error) {
       console.error("Error creating order:", error);
 
-      const errorMessage = error instanceof Error ? error.message : "Failed to create order";
+      const errorMessage =
+        error instanceof Error ? error.message : "Failed to create order";
 
       // Check if it's a duplicate escrow address error
       const isDuplicateEscrow = errorMessage.includes("already exists");
 
       const response: ApiResponse = {
         success: false,
-        error: errorMessage
+        error: errorMessage,
       };
-      return new Response(
-        JSON.stringify(response),
-        {
-          status: isDuplicateEscrow ? 409 : 500, // 409 Conflict for duplicates, 500 for other errors
-          headers: { "Content-Type": "application/json" }
-        }
-      );
+      return new Response(JSON.stringify(response), {
+        status: isDuplicateEscrow ? 409 : 500, // 409 Conflict for duplicates, 500 for other errors
+        headers: { "Content-Type": "application/json" },
+      });
     }
   };
 
   /**
    * Handle GET /order - Retrieve order(s)
    */
-  const handleGetOrder: RequestHandler = async (req: Request): Promise<Response> => {
+  const handleGetOrder: RequestHandler = async (
+    req: Request,
+  ): Promise<Response> => {
     try {
       const url = new URL(req.url);
       const orderId = url.searchParams.get("id");
       const escrowAddress = url.searchParams.get("escrow_address");
       const sellTokenAddress = url.searchParams.get("sell_token_address");
       const buyTokenAddress = url.searchParams.get("buy_token_address");
+      const includeSensitive =
+        url.searchParams.get("include_sensitive") === "true";
+
+      if (includeSensitive) {
+        const res = requireHmacAuth(req, "");
+        if (res) return res;
+      }
 
       let orders: Order[];
       let message: string;
@@ -96,16 +118,13 @@ export function createOrderHandlers(database: IDatabase) {
           const response: ApiResponse<any[]> = {
             success: false,
             error: `Order with ID ${orderId} not found`,
-            data: []
+            data: [],
           };
 
-          return new Response(
-            JSON.stringify(response),
-            {
-              status: 404,
-              headers: { "Content-Type": "application/json" }
-            }
-          );
+          return new Response(JSON.stringify(response), {
+            status: 404,
+            headers: { "Content-Type": "application/json" },
+          });
         }
 
         orders = [order]; // Return single order in an array
@@ -121,10 +140,12 @@ export function createOrderHandlers(database: IDatabase) {
 
         const filterDescriptions: string[] = [];
         if (escrowAddress) filterDescriptions.push(`escrow: ${escrowAddress}`);
-        if (sellTokenAddress) filterDescriptions.push(`sell token: ${sellTokenAddress}`);
-        if (buyTokenAddress) filterDescriptions.push(`buy token: ${buyTokenAddress}`);
+        if (sellTokenAddress)
+          filterDescriptions.push(`sell token: ${sellTokenAddress}`);
+        if (buyTokenAddress)
+          filterDescriptions.push(`buy token: ${buyTokenAddress}`);
 
-        message = `Retrieved ${orders.length} order(s) filtered by ${filterDescriptions.join(', ')}`;
+        message = `Retrieved ${orders.length} order(s) filtered by ${filterDescriptions.join(", ")}`;
       } else {
         // If no parameters provided, return all orders
         orders = database.getAllOrders();
@@ -134,80 +155,73 @@ export function createOrderHandlers(database: IDatabase) {
       const response: ApiResponse<any[]> = {
         success: true,
         message: message,
-        data: serializeOrders(orders)
+        data: includeSensitive
+          ? serializeOrders(orders)
+          : serializeOrdersPublic(orders),
       };
 
-      return new Response(
-        JSON.stringify(response),
-        {
-          status: 200,
-          headers: { "Content-Type": "application/json" }
-        }
-      );
+      return new Response(JSON.stringify(response), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
     } catch (error) {
       console.error("Error retrieving order(s):", error);
 
       const response: ApiResponse = {
         success: false,
-        error: error instanceof Error ? error.message : "Failed to retrieve orders"
+        error:
+          error instanceof Error ? error.message : "Failed to retrieve orders",
       };
 
-      return new Response(
-        JSON.stringify(response),
-        {
-          status: 500,
-          headers: { "Content-Type": "application/json" }
-        }
-      );
+      return new Response(JSON.stringify(response), {
+        status: 500,
+        headers: { "Content-Type": "application/json" },
+      });
     }
   };
 
   /**
    * Handle DELETE /order - Close an order
    */
-  const handleCloseOrder: RequestHandler = async (req: Request): Promise<Response> => {
+  const handleCloseOrder: RequestHandler = async (
+    req: Request,
+  ): Promise<Response> => {
     const url = new URL(req.url);
     const orderId = url.searchParams.get("id");
     if (!orderId) {
-      return new Response(
-        "Order parameter not supplied",
-        { status: 400 }
-      );
+      return new Response("Order parameter not supplied", { status: 400 });
     }
 
     try {
+      const res = requireHmacAuth(req, "");
+      if (res) return res;
       const success = database.closeOrder(orderId);
       if (success) {
-        return new Response(
-          `Order #${orderId} closed successfully`,
-          { status: 204 }
-        );
+        return new Response(`Order #${orderId} closed successfully`, {
+          status: 204,
+        });
       } else {
-        return new Response(
-          `Order #${orderId} not found`,
-          { status: 404 }
-        );
+        return new Response(`Order #${orderId} not found`, { status: 404 });
       }
     } catch (error) {
       const response: ApiResponse = {
         success: false,
-        error: error instanceof Error ? error.message : `Failed to close order #${orderId}`
+        error:
+          error instanceof Error
+            ? error.message
+            : `Failed to close order #${orderId}`,
       };
 
-      return new Response(
-        JSON.stringify(response),
-        {
-          status: 500,
-          headers: { "Content-Type": "application/json" }
-        }
-      );
+      return new Response(JSON.stringify(response), {
+        status: 500,
+        headers: { "Content-Type": "application/json" },
+      });
     }
-
-  }
+  };
 
   return {
     handleCreateOrder,
     handleGetOrder,
-    handleCloseOrder
+    handleCloseOrder,
   };
 }

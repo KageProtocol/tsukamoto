@@ -7,7 +7,7 @@ export function serializeOrder(order: Order): any {
   return {
     ...order,
     sellTokenAmount: order.sellTokenAmount.toString(),
-    buyTokenAmount: order.buyTokenAmount.toString()
+    buyTokenAmount: order.buyTokenAmount.toString(),
   };
 }
 
@@ -15,7 +15,16 @@ export function serializeOrder(order: Order): any {
  * Serialize an array of Order objects
  */
 export function serializeOrders(orders: Order[]): any[] {
-  return orders.map(order => serializeOrder(order));
+  return orders.map((order) => serializeOrder(order));
+}
+
+export function serializeOrderPublic(order: Order): any {
+  const { secretKey, partialAddress, ...rest } = order as any;
+  return serializeOrder(rest as Order);
+}
+
+export function serializeOrdersPublic(orders: Order[]): any[] {
+  return orders.map((o) => serializeOrderPublic(o));
 }
 
 /**
@@ -23,7 +32,7 @@ export function serializeOrders(orders: Order[]): any[] {
  */
 export function stringifyWithBigInt(obj: any): string {
   return JSON.stringify(obj, (key, value) => {
-    if (typeof value === 'bigint') {
+    if (typeof value === "bigint") {
       return value.toString();
     }
     return value;

@@ -11,6 +11,8 @@ export interface Order {
   sellTokenAmount: BigInt;
   buyTokenAddress: string;
   buyTokenAmount: BigInt;
+  status?: "open" | "filled" | "cancelled";
+  expiresAt?: number;
 }
 
 /**
@@ -25,6 +27,7 @@ export interface CreateOrderRequest {
   sellTokenAmount: BigInt;
   buyTokenAddress: string;
   buyTokenAmount: BigInt;
+  expiresAt?: number;
 }
 
 /**
@@ -38,7 +41,7 @@ export interface SerializedOrder {
   sellTokenAddress: string;
   sellTokenAmount: string; // BigInt serialized to string
   buyTokenAddress: string;
-  buyTokenAmount: string;  // BigInt serialized to string
+  buyTokenAmount: string; // BigInt serialized to string
 }
 
 /**

@@ -2,7 +2,8 @@
   "name": "aztec-otc-desk-monorepo",
   "workspaces": {
     "packages": [
-      "packages/*"
+      "packages/*",
+      "apps/*"
     ],
     "catalog": {
       "@types/bun": "latest",
