@@ -16,6 +16,10 @@ export default function Home() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [actionMsg, setActionMsg] = useState<string | null>(null);
+  const [toast, setToast] = useState<{
+    type: "success" | "error";
+    msg: string;
+  } | null>(null);
   const [filters, setFilters] = useState({
     sell: "",
     buy: "",
@@ -65,9 +69,11 @@ export default function Home() {
       setActionMsg(
         "Fetched include_sensitive order details (server). Ready to trigger local fill.",
       );
+      setToast({ type: "success", msg: "Fetched include_sensitive details" });
       console.log("/api/fill response", json.data);
     } catch (e) {
       setActionMsg(`Fill error: ${(e as Error).message}`);
+      setToast({ type: "error", msg: (e as Error).message });
     }
   };
 
@@ -86,6 +92,21 @@ export default function Home() {
       </p>
       <button onClick={fetchOrders} disabled={loading}>
         {loading ? "Refreshing..." : "Refresh"}
+      </button>
+      <button
+        style={{ marginLeft: 8 }}
+        onClick={async () => {
+          setActionMsg(null);
+          const res = await fetch("/api/order/create", { method: "POST" });
+          const json = await res.json();
+          if (!json.success) setActionMsg(`Create order error: ${json.error}`);
+          else {
+            setActionMsg("Created order via CLI. Refreshing...");
+            await fetchOrders();
+          }
+        }}
+      >
+        Create Order
       </button>
       <div style={{ marginTop: 12, display: "flex", gap: 8 }}>
         <input
@@ -134,9 +155,13 @@ export default function Home() {
                   body: JSON.stringify({ orderId: o.orderId }),
                 });
                 const json = await res.json();
-                if (!json.success) setActionMsg(`Execute error: ${json.error}`);
-                else
+                if (!json.success) {
+                  setActionMsg(`Execute error: ${json.error}`);
+                  setToast({ type: "error", msg: json.error });
+                } else {
                   setActionMsg("Executed local fill_by_id. Check server logs.");
+                  setToast({ type: "success", msg: "Local fill executed" });
+                }
               }}
             >
               Execute Local Fill
@@ -145,6 +170,23 @@ export default function Home() {
         ))}
       </ul>
       {actionMsg && <p style={{ marginTop: 12 }}>{actionMsg}</p>}
+      {toast && (
+        <div
+          style={{
+            position: "fixed",
+            bottom: 16,
+            right: 16,
+            background: toast.type === "success" ? "#0c7" : "#c22",
+            color: "white",
+            padding: "10px 14px",
+            borderRadius: 8,
+            boxShadow: "0 4px 12px rgba(0,0,0,0.15)",
+          }}
+          onClick={() => setToast(null)}
+        >
+          {toast.msg}
+        </div>
+      )}
       {!loading && orders.length === 0 && <p>No open orders.</p>}
     </main>
   );

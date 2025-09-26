@@ -2,19 +2,15 @@ import "server-only";
 import { spawn } from "child_process";
 import path from "path";
 
-export async function POST(req: Request) {
+export async function POST() {
   try {
-    const { orderId } = await req.json();
-    if (!orderId) return new Response("Missing orderId", { status: 400 });
-
     const root = path.resolve(process.cwd(), "../..");
     const scriptPath = path.resolve(
       root,
-      "packages/nodejs-demo/scripts/fill_by_id.ts",
+      "packages/nodejs-demo/scripts/create_order.ts",
     );
     const env = {
       ...process.env,
-      ORDER_ID: orderId,
       L2_NODE_URL: process.env.L2_NODE_URL || "http://localhost:8080",
       API_URL:
         process.env.OTC_API_URL ||
@@ -33,9 +29,19 @@ export async function POST(req: Request) {
     let stderr = "";
     child.stdout.on("data", (d) => (stdout += d.toString()));
     child.stderr.on("data", (d) => (stderr += d.toString()));
+    const errored: { err?: Error } = {};
+    child.on("error", (err) => {
+      errored.err = err as Error;
+    });
 
     await new Promise((resolve) => child.on("close", resolve));
     const code = child.exitCode ?? 1;
+    if (errored.err) {
+      return new Response(
+        JSON.stringify({ success: false, error: errored.err.message }),
+        { status: 500 },
+      );
+    }
     if (code !== 0) {
       return new Response(
         JSON.stringify({ success: false, error: stderr || "Unknown error" }),

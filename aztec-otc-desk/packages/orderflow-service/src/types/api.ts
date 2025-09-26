@@ -13,6 +13,7 @@ export interface Order {
   buyTokenAmount: BigInt;
   status?: "open" | "filled" | "cancelled";
   expiresAt?: number;
+  createdAt?: string;
 }
 
 /**
