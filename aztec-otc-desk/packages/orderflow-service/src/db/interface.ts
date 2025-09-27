@@ -46,6 +46,12 @@ export interface IDatabase {
   closeOrder(orderId: string): boolean;
 
   /**
+   * Mark all open orders as cancelled
+   * @returns number of orders updated
+   */
+  closeAllOpenOrders(): number;
+
+  /**
    * Get orders by sell token address
    */
   getOrdersBySellToken(sellTokenAddress: string): Order[];

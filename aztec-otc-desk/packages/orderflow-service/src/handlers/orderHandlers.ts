@@ -15,6 +15,7 @@ import {
   serializeOrdersPublic,
 } from "../utils/serialization";
 import { requireHmacAuth } from "../utils/auth";
+import { postWebhook } from "../utils/webhooks";
 
 /**
  * Create order handlers with database dependency injection
@@ -56,6 +57,8 @@ export function createOrderHandlers(database: IDatabase) {
 
       // Save to database
       const savedOrder = database.insertOrder(order);
+      // fire webhook (non-blocking)
+      void postWebhook("order.created", serializeOrderPublic(savedOrder));
 
       const response: ApiResponse<any> = {
         success: true,
@@ -103,6 +106,7 @@ export function createOrderHandlers(database: IDatabase) {
         url.searchParams.get("include_sensitive") === "true";
       const limit = url.searchParams.get("limit");
       const offset = url.searchParams.get("offset");
+      const all = url.searchParams.get("all") === "true";
 
       if (includeSensitive) {
         const res = requireHmacAuth(req, "");
@@ -152,9 +156,21 @@ export function createOrderHandlers(database: IDatabase) {
 
         message = `Retrieved ${orders.length} order(s) filtered by ${filterDescriptions.join(", ")}`;
       } else {
-        // If no parameters provided, return all orders
-        orders = database.getAllOrders();
-        message = `Retrieved ${orders.length} order(s)`;
+        if (all) {
+          // Return all orders (no default filtering)
+          orders = database.getAllOrders();
+          message = `Retrieved ${orders.length} order(s)`;
+        } else {
+          // Default to open/unexpired via filtered query
+          orders = database.getOrdersWithFilters(
+            {},
+            {
+              limit: limit ? Number(limit) : undefined,
+              offset: offset ? Number(offset) : undefined,
+            },
+          );
+          message = `Retrieved ${orders.length} open order(s)`;
+        }
       }
 
       const response: ApiResponse<any[]> = {
@@ -193,21 +209,46 @@ export function createOrderHandlers(database: IDatabase) {
   ): Promise<Response> => {
     const url = new URL(req.url);
     const orderId = url.searchParams.get("id");
-    if (!orderId) {
+    const cancelAll = url.searchParams.get("all") === "true";
+    if (!orderId && !cancelAll) {
       return new Response("Order parameter not supplied", { status: 400 });
     }
 
     try {
       const res = requireHmacAuth(req, "");
       if (res) return res;
-      const success = database.closeOrder(orderId);
-      if (success) {
-        return new Response(`Order #${orderId} closed successfully`, {
-          status: 204,
+      if (cancelAll) {
+        let count = 0;
+        try {
+          // prefer async PG path if available
+          // @ts-ignore
+          if (typeof (database as any).closeAllOpenOrdersAsync === "function") {
+            // @ts-ignore
+            count = await (database as any).closeAllOpenOrdersAsync();
+          } else {
+            count = database.closeAllOpenOrders();
+          }
+        } catch {
+          count = 0;
+        }
+        void postWebhook("orders.cancelled_all", { count });
+        return new Response(JSON.stringify({ success: true, count }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
         });
-      } else {
-        return new Response(`Order #${orderId} not found`, { status: 404 });
+      } else if (orderId) {
+        const success = database.closeOrder(orderId);
+        if (success) {
+          // fire webhook (non-blocking)
+          void postWebhook("order.cancelled", { orderId });
+          return new Response(`Order #${orderId} closed successfully`, {
+            status: 204,
+          });
+        } else {
+          return new Response(`Order #${orderId} not found`, { status: 404 });
+        }
       }
+      return new Response("Bad Request", { status: 400 });
     } catch (error) {
       const response: ApiResponse = {
         success: false,

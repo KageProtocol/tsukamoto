@@ -31,3 +31,5 @@ pxe
 **/keystore/**
 **/keystores/**
 roadmap.md
+backlog.md
+packages/nodejs-demo/scripts/data/accounts.json

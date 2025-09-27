@@ -20,7 +20,7 @@ export class PostgresDatabase implements IDatabase {
 
   async escrowAddressExists(escrowAddress: string): Promise<boolean> {
     const { rows } = await this.pool.query(
-      "SELECT 1 FROM orders WHERE \"escrowAddress\" = $1 LIMIT 1",
+      'SELECT 1 FROM orders WHERE "escrowAddress" = $1 LIMIT 1',
       [escrowAddress],
     );
     return rows.length > 0;
@@ -79,7 +79,7 @@ export class PostgresDatabase implements IDatabase {
 
   async closeOrder(orderId: string): Promise<boolean> {
     const { rowCount } = await this.pool.query(
-      'DELETE FROM orders WHERE "orderId" = $1',
+      'UPDATE orders SET "status" = \'cancelled\' WHERE "orderId" = $1',
       [orderId],
     );
     return (rowCount || 0) > 0;
@@ -109,7 +109,8 @@ export class PostgresDatabase implements IDatabase {
     },
     options?: { limit?: number; offset?: number },
   ): Promise<Order[]> {
-    let where = 'WHERE 1=1 AND ("status" = $1) AND ("expiresAt" IS NULL OR "expiresAt" > EXTRACT(EPOCH FROM NOW()))';
+    let where =
+      'WHERE 1=1 AND ("status" = $1) AND ("expiresAt" IS NULL OR "expiresAt" > EXTRACT(EPOCH FROM NOW()))';
     const params: any[] = ["open"];
     let p = 2;
     if (filters.escrowAddress) {
@@ -140,6 +141,19 @@ export class PostgresDatabase implements IDatabase {
     return rows.map((r) => this.mapRowToOrder(r));
   }
 
+  closeAllOpenOrders(): number {
+    // sync wrapper to satisfy interface; actual call is async-like
+    // use deasync style by returning 0 and let handler not rely on return
+    // Instead we will expose an async version for internal usage
+    throw new Error("Use closeAllOpenOrdersAsync in PostgresDatabase");
+  }
+
+  async closeAllOpenOrdersAsync(): Promise<number> {
+    const { rowCount } = await this.pool.query(
+      "UPDATE orders SET \"status\" = 'cancelled' WHERE \"status\" = 'open'",
+    );
+    return rowCount || 0;
+  }
   close(): void {
     // pool.end returns a promise but interface is sync; fire-and-forget
     void this.pool.end();
@@ -162,5 +176,3 @@ export class PostgresDatabase implements IDatabase {
     } as any;
   }
 }
-
-

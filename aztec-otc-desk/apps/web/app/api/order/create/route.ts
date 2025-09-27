@@ -43,8 +43,24 @@ export async function POST() {
       );
     }
     if (code !== 0) {
+      const raw = (stderr || stdout || "").toString();
+      let reason: string | undefined;
+      let userError = "Create failed";
+      if (/Balance too low/i.test(raw)) {
+        reason = "LOW_BALANCE";
+        userError =
+          "Insufficient private balance. Mint tokens to maker PXE and retry.";
+      } else if (/OTC_HMAC_SECRET|API_HMAC_SECRET/i.test(raw)) {
+        reason = "CONFIG";
+        userError = "Server not configured: missing HMAC secret.";
+      }
       return new Response(
-        JSON.stringify({ success: false, error: stderr || "Unknown error" }),
+        JSON.stringify({
+          success: false,
+          error: raw.slice(0, 2000),
+          reason,
+          userError,
+        }),
         { status: 500 },
       );
     }

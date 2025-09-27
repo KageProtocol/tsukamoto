@@ -1,3 +1,4 @@
+import "./globals.css";
 export const metadata = {
   title: "Tsukamoto OTC",
   description: "Private OTC Desk on Aztec",

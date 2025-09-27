@@ -33,6 +33,16 @@ export class SQLiteDatabase implements IDatabase {
         createdAt DATETIME DEFAULT CURRENT_TIMESTAMP
       )
     `);
+    // Indexes for faster filtering
+    this.db.exec(
+      `CREATE INDEX IF NOT EXISTS idx_orders_sell ON orders (sellTokenAddress);`,
+    );
+    this.db.exec(
+      `CREATE INDEX IF NOT EXISTS idx_orders_buy ON orders (buyTokenAddress);`,
+    );
+    this.db.exec(
+      `CREATE INDEX IF NOT EXISTS idx_orders_created ON orders (createdAt);`,
+    );
   }
 
   /**
@@ -135,9 +145,19 @@ export class SQLiteDatabase implements IDatabase {
    * @param orderId - the order ID to delete
    */
   closeOrder(orderId: string): boolean {
-    const stmt = this.db.prepare("DELETE FROM orders WHERE orderId = ?");
+    const stmt = this.db.prepare(
+      "UPDATE orders SET status = 'cancelled' WHERE orderId = ?",
+    );
     const result = stmt.run(orderId);
     return result.changes > 0;
+  }
+
+  closeAllOpenOrders(): number {
+    const stmt = this.db.prepare(
+      "UPDATE orders SET status = 'cancelled' WHERE status = 'open'",
+    );
+    const result = stmt.run();
+    return result.changes;
   }
 
   /**
