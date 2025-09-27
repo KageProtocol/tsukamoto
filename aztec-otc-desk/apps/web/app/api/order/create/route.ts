@@ -2,8 +2,20 @@ import "server-only";
 import { spawn } from "child_process";
 import path from "path";
 
-export async function POST() {
+export async function POST(req: Request) {
   try {
+    const body = await req.text();
+    let orderParams = null;
+
+    // Try to parse JSON body for wizard parameters
+    try {
+      if (body.trim()) {
+        orderParams = JSON.parse(body);
+      }
+    } catch {
+      // If parsing fails, use hardcoded script (backward compatibility)
+    }
+
     const root = path.resolve(process.cwd(), "../..");
     const scriptPath = path.resolve(
       root,
@@ -19,6 +31,19 @@ export async function POST() {
       API_HMAC_SECRET:
         process.env.OTC_HMAC_SECRET || process.env.API_HMAC_SECRET || "",
     };
+
+    // Add wizard parameters to environment if available
+    if (orderParams) {
+      console.log("Order wizard parameters:", orderParams);
+      env.WIZARD_SELL_TOKEN = orderParams.sellTokenAddress || "";
+      env.WIZARD_SELL_AMOUNT = orderParams.sellTokenAmount || "";
+      env.WIZARD_BUY_TOKEN = orderParams.buyTokenAddress || "";
+      env.WIZARD_BUY_AMOUNT = orderParams.buyTokenAmount || "";
+      env.WIZARD_EXPIRY_HOURS = orderParams.expiryHours?.toString() || "24";
+      env.WIZARD_MIN_FILL = orderParams.minFillAmount || "";
+      env.WIZARD_SLIPPAGE_BPS = orderParams.slippageBps?.toString() || "50";
+      env.USE_WIZARD_PARAMS = "true";
+    }
 
     const child = spawn("bun", ["run", scriptPath], {
       env,

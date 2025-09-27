@@ -1,6 +1,7 @@
 
 import { createOrderHandlers } from "./handlers";
 import { SQLiteDatabase, PostgresDatabase } from "./db";
+import { getMetrics, getPrometheusMetrics, withMetrics } from "./utils/metrics";
 
 /**
  * Orderflow Service
@@ -22,6 +23,13 @@ const main = async () => {
     handleGetOrder,
     handleCloseOrder
   } = createOrderHandlers(database);
+
+  // Wrap handlers with metrics tracking
+  const metricsWrappedHandlers = {
+    handleCreateOrder: withMetrics(handleCreateOrder, { operation: "create_order" }),
+    handleGetOrder: withMetrics(handleGetOrder, { operation: "get_order" }),
+    handleCloseOrder: withMetrics(handleCloseOrder, { operation: "cancel_order" }),
+  };
   
   const server = Bun.serve({
     port: 3000,
@@ -33,27 +41,62 @@ const main = async () => {
       if (url.pathname === "/order") {
         switch (req.method) {
           case "POST":
-            return handleCreateOrder(req);
+            return metricsWrappedHandlers.handleCreateOrder(req);
           case "GET":
-            return handleGetOrder(req);
+            return metricsWrappedHandlers.handleGetOrder(req);
           case "DELETE":
-            return handleCloseOrder(req);
+            return metricsWrappedHandlers.handleCloseOrder(req);
           default:
             return new Response("Method Not Allowed", { status: 405 });
         }
       }
-      if (req.method === "POST" && url.pathname === "/order") {
-        return handleCreateOrder(req);
-      }
-      
-      // GET /order endpoint
-      if (req.method === "GET" && url.pathname === "/order") {
-        return handleGetOrder(req);
+
+      // Health endpoints
+      if (req.method === "GET" && url.pathname === "/health") {
+        const metrics = getMetrics();
+        return new Response(JSON.stringify({
+          status: "ok",
+          health: metrics.healthStatus,
+          uptime: metrics.uptime,
+          timestamp: metrics.timestamp
+        }), {
+          status: metrics.healthStatus === "healthy" ? 200 : 503,
+          headers: { "Content-Type": "application/json" }
+        });
       }
 
-      // healthcheck endpoint
-      if (req.method === "GET" && url.pathname === "/health") {
+      if (req.method === "GET" && url.pathname === "/healthz") {
         return new Response("OK", { status: 200 });
+      }
+
+      if (req.method === "GET" && url.pathname === "/readyz") {
+        try {
+          // Check database connectivity
+          const testQuery = database.getAllOrders;
+          if (typeof testQuery === "function") {
+            testQuery.call(database);
+          }
+          return new Response("Ready", { status: 200 });
+        } catch (error) {
+          return new Response("Not Ready", { status: 503 });
+        }
+      }
+
+      // Metrics endpoints
+      if (req.method === "GET" && url.pathname === "/metrics") {
+        const metrics = getMetrics();
+        return new Response(JSON.stringify(metrics), {
+          status: 200,
+          headers: { "Content-Type": "application/json" }
+        });
+      }
+
+      if (req.method === "GET" && url.pathname === "/metrics/prometheus") {
+        const prometheusMetrics = getPrometheusMetrics();
+        return new Response(prometheusMetrics, {
+          status: 200,
+          headers: { "Content-Type": "text/plain" }
+        });
       }
 
       // Handle 404

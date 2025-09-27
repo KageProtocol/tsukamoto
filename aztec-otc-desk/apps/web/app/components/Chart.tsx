@@ -1,6 +1,7 @@
 "use client";
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { createChart, ColorType, IChartApi } from "lightweight-charts";
+import { ChartSkeleton } from "./Skeleton";
 export default function Chart({
   ticker = "ETH-USD",
   interval = "day",
@@ -14,9 +15,11 @@ export default function Chart({
 }) {
   const ref = useRef<HTMLDivElement | null>(null);
   const chartRef = useRef<IChartApi | null>(null);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     if (!ref.current) return;
+    setLoading(true);
     const chart = createChart(ref.current, {
       layout: {
         background: { type: ColorType.Solid, color: "#0f0f0f" },
@@ -48,20 +51,25 @@ export default function Chart({
     chartRef.current = chart;
 
     const load = async () => {
-      const res = await fetch(
-        `/api/chart?ticker=${encodeURIComponent(ticker)}&interval=${interval}&interval_multiplier=${intervalMultiplier}`,
-      );
-      const json = await res.json();
-      if (json?.success && Array.isArray(json.data)) {
-        if (type === "candles") {
-          series.setData(json.data);
-        } else {
-          const area = json.data.map((d: any) => ({
-            time: d.time,
-            value: d.close,
-          }));
-          series.setData(area);
+      setLoading(true);
+      try {
+        const res = await fetch(
+          `/api/chart?ticker=${encodeURIComponent(ticker)}&interval=${interval}&interval_multiplier=${intervalMultiplier}`,
+        );
+        const json = await res.json();
+        if (json?.success && Array.isArray(json.data)) {
+          if (type === "candles") {
+            series.setData(json.data);
+          } else {
+            const area = json.data.map((d: any) => ({
+              time: d.time,
+              value: d.close,
+            }));
+            series.setData(area);
+          }
         }
+      } finally {
+        setLoading(false);
       }
     };
     void load();
@@ -76,5 +84,26 @@ export default function Chart({
     };
   }, [ticker, interval, intervalMultiplier, type]);
 
-  return <div ref={ref} className="card chart" />;
+  return (
+    <div style={{ position: "relative" }}>
+      {loading && (
+        <div style={{
+          position: "absolute",
+          inset: 0,
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          background: "linear-gradient(180deg, #0f0f0f, #101319)",
+          borderRadius: 12,
+          border: "1px solid var(--border)",
+          color: "#9aa3ad",
+          fontSize: 12,
+          zIndex: 10,
+        }}>
+          Loading chart data...
+        </div>
+      )}
+      <div ref={ref} className="card chart" />
+    </div>
+  );
 }

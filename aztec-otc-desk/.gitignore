@@ -33,3 +33,26 @@ pxe
 roadmap.md
 backlog.md
 packages/nodejs-demo/scripts/data/accounts.json
+
+# Debugging and monitoring files
+debug_logs/
+debug_fill_errors.js
+monitor_fill.js
+test_ui_fill.js
+*.debug.js
+*.test.js
+*_debug.js
+*_test.js
+*_monitor.js
+
+# Next.js build artifacts that may contain sensitive data
+.next/
+out/
+
+# Additional security files
+*.secret
+*.credentials
+*secret*
+*credentials*
+deployment-keys/
+private-keys/

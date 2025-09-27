@@ -12,12 +12,7 @@ import {
   getOTCAccounts,
   getTestnetSendWaitOptions,
   closeOrder,
-  usdcMintAmount,
 } from "./utils";
-import {
-  eth as ethDeployment,
-  usdc as usdcDeployment,
-} from "./data/deployments.json";
 
 async function main() {
   const { L2_NODE_URL, API_URL, ORDER_ID } = process.env as Record<
@@ -53,25 +48,54 @@ async function main() {
   }
   const orderToFill = json.data[0];
 
-  const ethAddress = AztecAddress.fromString(ethDeployment.address);
-  const usdcAddress = AztecAddress.fromString(usdcDeployment.address);
-  const eth = await getTokenContract(pxe, buyer, ethAddress, L2_NODE_URL);
-  const usdc = await getTokenContract(pxe, buyer, usdcAddress, L2_NODE_URL);
-  await eth.methods.sync_private_state().simulate();
-  await usdc.methods.sync_private_state().simulate();
+  // Get token contracts based on the order's token addresses
+  const sellTokenAddress = AztecAddress.fromString(orderToFill.sellTokenAddress);
+  const buyTokenAddress = AztecAddress.fromString(orderToFill.buyTokenAddress);
+  const sellToken = await getTokenContract(pxe, buyer, sellTokenAddress, L2_NODE_URL);
+  const buyToken = await getTokenContract(pxe, buyer, buyTokenAddress, L2_NODE_URL);
+  await sellToken.methods.sync_private_state().simulate();
+  await buyToken.methods.sync_private_state().simulate();
+
+  // Check buyer's balance for the buy token
+  const buyerBalance = await buyToken.methods.balance_of_private(buyer.getAddress()).simulate();
+  console.log("Buyer's balance for buy token:", buyerBalance.toString());
 
   const escrow = await escrowInstanceFromOrder(pxe, buyer, orderToFill);
   const opts = await getTestnetSendWaitOptions(pxe);
 
   console.log(`Filling order ${ORDER_ID} ...`);
-  const txHash = await fillOTCOrder(escrow, buyer, usdc, usdcMintAmount, opts);
-  console.log(
-    "Filled OTC order with txHash:",
-    txHash.toString?.() ?? String(txHash),
-  );
+  console.log("Order details:", {
+    sellTokenAmount: orderToFill.sellTokenAmount,
+    buyTokenAmount: orderToFill.buyTokenAmount,
+    sellTokenAddress: orderToFill.sellTokenAddress,
+    buyTokenAddress: orderToFill.buyTokenAddress
+  });
 
-  await closeOrder(orderToFill.orderId, API_URL);
-  console.log("Closed order", ORDER_ID);
+  // Use the actual buy amount from the order instead of hardcoded value
+  const buyAmountFromOrder = BigInt(orderToFill.buyTokenAmount);
+  console.log("Using buy amount from order:", buyAmountFromOrder.toString());
+
+  // Check if buyer has sufficient balance
+  if (buyerBalance < buyAmountFromOrder) {
+    throw new Error(`Insufficient balance. Required: ${buyAmountFromOrder.toString()}, Available: ${buyerBalance.toString()}`);
+  }
+
+  let txHash;
+  try {
+    txHash = await fillOTCOrder(escrow, buyer, buyToken, buyAmountFromOrder, opts);
+    console.log(
+      "Filled OTC order with txHash:",
+      txHash.toString?.() ?? String(txHash),
+    );
+    console.log("Fill operation completed successfully");
+
+    // Only close the order if fill succeeded
+    await closeOrder(orderToFill.orderId, API_URL);
+    console.log("Closed order", ORDER_ID);
+  } catch (fillError) {
+    console.error("Fill operation failed:", fillError);
+    throw new Error(`Fill failed: ${fillError.message}`);
+  }
 }
 
 main().catch((e) => {

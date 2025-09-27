@@ -1,22 +1,18 @@
 "use client";
+import { TokenIcon } from "./TokenIcon";
+
 export default function TokenBadge({
   symbol,
   address,
-  color = "#5cc8ff",
+  size = 16,
 }: {
   symbol: string;
   address?: string;
-  color?: string;
+  size?: number;
 }) {
   return (
     <span className="badge">
-      <span
-        className="token-dot"
-        style={{
-          background: color,
-          boxShadow: `0 0 0 2px rgba(92,200,255,.15)`,
-        }}
-      />
+      <TokenIcon symbol={symbol} size={size} />
       <span style={{ fontWeight: 600, marginRight: 6 }}>{symbol}</span>
       {address ? (
         <span className="muted">

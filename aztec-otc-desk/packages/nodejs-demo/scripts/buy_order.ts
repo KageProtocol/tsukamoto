@@ -4,10 +4,6 @@ import {
   fillOTCOrder,
   getTokenContract,
 } from "@aztec-otc-desk/contracts";
-import {
-  eth as ethDeployment,
-  usdc as usdcDeployment,
-} from "./data/deployments.json";
 import { AztecAddress } from "@aztec/aztec.js";
 import readline from "readline";
 import {
@@ -16,7 +12,6 @@ import {
   getOrders,
   getOTCAccounts,
   getTestnetSendWaitOptions,
-  usdcMintAmount,
 } from "./utils";
 
 // get environment variables
@@ -62,30 +57,27 @@ const main = async () => {
   const pxe = await createPXE(Number.isFinite(buyerPxeId) ? buyerPxeId : 0);
   const { buyer } = await getOTCAccounts(pxe);
 
-  // instantiate token contracts
-  const ethAddress = AztecAddress.fromString(ethDeployment.address);
-  const eth = await getTokenContract(pxe, buyer, ethAddress, L2_NODE_URL).catch(
+  // Get token contracts based on the order's token addresses
+  const sellTokenAddress = AztecAddress.fromString(orderToFill.sellTokenAddress);
+  const buyTokenAddress = AztecAddress.fromString(orderToFill.buyTokenAddress);
+  const sellToken = await getTokenContract(pxe, buyer, sellTokenAddress, L2_NODE_URL).catch(
     () => {
       throw new Error(
-        "ETH token not found on node. Ensure setup:deploy ran in this session.",
+        `Sell token ${orderToFill.sellTokenAddress} not found on node. Ensure setup:deploy ran in this session.`,
       );
     },
   );
-  await eth.methods.sync_private_state().simulate();
-
-  // get USDC token
-  const usdcAddress = AztecAddress.fromString(usdcDeployment.address);
-  const usdc = await getTokenContract(
-    pxe,
-    buyer,
-    usdcAddress,
-    L2_NODE_URL,
-  ).catch(() => {
+  const buyToken = await getTokenContract(pxe, buyer, buyTokenAddress, L2_NODE_URL).catch(() => {
     throw new Error(
-      "USDC token not found on node. Ensure setup:deploy ran in this session and deployments.json matches.",
+      `Buy token ${orderToFill.buyTokenAddress} not found on node. Ensure setup:deploy ran in this session and deployments.json matches.`,
     );
   });
-  await usdc.methods.sync_private_state().simulate();
+  await sellToken.methods.sync_private_state().simulate();
+  await buyToken.methods.sync_private_state().simulate();
+
+  // Check buyer's balance for the buy token
+  const buyerBalance = await buyToken.methods.balance_of_private(buyer.getAddress()).simulate();
+  console.log("Buyer's balance for buy token:", buyerBalance.toString());
 
   // register escrow contract and account then get deployed instance
   const escrow = await escrowInstanceFromOrder(pxe, buyer, orderToFill);
@@ -93,13 +85,28 @@ const main = async () => {
   // if testnet, get send/ wait opts optimized for waiting and high gas
   const opts = await getTestnetSendWaitOptions(pxe);
 
+  // Use the actual buy amount from the order instead of hardcoded value
+  const buyAmountFromOrder = BigInt(orderToFill.buyTokenAmount);
+  console.log("Order details:", {
+    sellTokenAmount: orderToFill.sellTokenAmount,
+    buyTokenAmount: orderToFill.buyTokenAmount,
+    sellTokenAddress: orderToFill.sellTokenAddress,
+    buyTokenAddress: orderToFill.buyTokenAddress
+  });
+  console.log("Using buy amount from order:", buyAmountFromOrder.toString());
+
+  // Check if buyer has sufficient balance
+  if (buyerBalance < buyAmountFromOrder) {
+    throw new Error(`Insufficient balance. Required: ${buyAmountFromOrder.toString()}, Available: ${buyerBalance.toString()}`);
+  }
+
   // fill the otc order
   console.log("Attempting to fill order");
   const txHash = await fillOTCOrder(
     escrow,
     buyer,
-    usdc,
-    usdcMintAmount,
+    buyToken,
+    buyAmountFromOrder,
     opts,
   ).catch((e) => {
     const msg = (e as Error).message || String(e);

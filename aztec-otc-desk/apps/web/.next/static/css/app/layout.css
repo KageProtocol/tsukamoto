@@ -393,3 +393,201 @@ body {
   border-color: #c22;
 }
 
+/* Responsive Design */
+@media (max-width: 1024px) {
+  .container {
+    padding: 16px;
+    max-width: none;
+  }
+
+  /* Stack trading terminal and chart on tablet */
+  .trading-grid {
+    grid-template-columns: 1fr !important;
+    gap: 16px !important;
+  }
+
+  .trading-terminal {
+    order: 1;
+  }
+
+  .chart-area {
+    order: 2;
+  }
+}
+
+@media (max-width: 768px) {
+  .container {
+    padding: 12px;
+  }
+
+  .header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 12px;
+  }
+
+  .header .row {
+    width: 100%;
+    justify-content: space-between;
+  }
+
+  .brand {
+    font-size: 18px;
+  }
+
+  .hero {
+    font-size: 18px;
+    margin: 16px 0;
+  }
+
+  /* Mobile chart controls */
+  .chart-controls {
+    flex-wrap: wrap;
+    gap: 4px !important;
+  }
+
+  .chart-controls select {
+    width: auto !important;
+    min-width: 80px;
+    font-size: 12px;
+  }
+
+  /* Mobile order cards */
+  .order-body {
+    grid-template-columns: 1fr;
+    gap: 6px;
+  }
+
+  .order-actions {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 6px;
+  }
+
+  .order-actions .btn {
+    width: 100%;
+    justify-content: center;
+  }
+
+  /* Mobile tabs */
+  .tabs {
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  .tab {
+    width: 100%;
+    text-align: center;
+  }
+
+  /* Mobile pills and badges */
+  .pill {
+    font-size: 10px;
+    padding: 4px 8px;
+  }
+
+  .brand-badge {
+    font-size: 10px;
+    padding: 4px 8px;
+  }
+
+  /* Mobile footer pagination */
+  .footer {
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 6px;
+  }
+
+  .footer .btn {
+    font-size: 12px;
+    padding: 6px 12px;
+  }
+}
+
+@media (max-width: 480px) {
+  .container {
+    padding: 8px;
+  }
+
+  .card {
+    padding: 12px;
+  }
+
+  .header {
+    margin-bottom: 12px;
+  }
+
+  .brand {
+    font-size: 16px;
+  }
+
+  .hero {
+    font-size: 16px;
+    margin: 12px 0;
+  }
+
+  /* Very small screen optimizations */
+  .btn {
+    font-size: 12px;
+    padding: 8px 12px;
+  }
+
+  .input {
+    font-size: 14px;
+    padding: 8px 10px;
+  }
+
+  .toast-stack {
+    right: 8px;
+    bottom: 8px;
+    left: 8px;
+  }
+
+  .toast {
+    padding: 8px 12px;
+    font-size: 12px;
+  }
+
+  /* Modal adjustments for mobile */
+  .modal-overlay {
+    padding: 8px !important;
+  }
+
+  .modal-content {
+    max-width: none !important;
+    width: 100% !important;
+    margin: 0 !important;
+    max-height: 90vh !important;
+    overflow-y: auto;
+  }
+}
+
+/* Utility classes for responsive grid */
+.trading-grid {
+  display: grid;
+  grid-template-columns: minmax(360px, 400px) 1fr;
+  grid-gap: 24px;
+  gap: 24px;
+  margin-bottom: 24px;
+  align-items: start;
+}
+
+.trading-terminal {
+  height: -moz-fit-content;
+  height: fit-content;
+}
+
+.chart-controls {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.trading-terminal {
+  /* Empty - just for targeting */
+}
+
+.chart-area {
+  /* Empty - just for targeting */
+}
+

@@ -3,6 +3,14 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { formatTokenAmount } from "../lib/tokens";
 import Chart from "./components/Chart";
+import { OrderListSkeleton } from "./components/Skeleton";
+import TokenBadge from "./components/TokenBadge";
+import TokenSelect from "./components/TokenSelect";
+import { toast } from "./components/ToastStack";
+import TransactionHistory, { transactionStorage, Transaction } from "./components/TransactionHistory";
+import PortfolioModal from "./components/PortfolioModal";
+import { useConfirmDialog } from "./components/ConfirmDialog";
+import { OrderStatusWithContext } from "./components/OrderStatusBadge";
 
 type Order = {
   orderId: string;
@@ -22,10 +30,6 @@ export default function Home() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [actionMsg, setActionMsg] = useState<string | null>(null);
-  const [toast, setToast] = useState<{
-    type: "success" | "error";
-    msg: string;
-  } | null>(null);
   const [executingId, setExecutingId] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
   const [filters, setFilters] = useState({
@@ -49,12 +53,27 @@ export default function Home() {
   const [buyAmount, setBuyAmount] = useState("");
   const [sellUsd, setSellUsd] = useState<number | null>(null);
   const [buyUsd, setBuyUsd] = useState<number | null>(null);
+  const [orderParams, setOrderParams] = useState({
+    sellToken: "",
+    sellAmount: "",
+    buyToken: "",
+    buyAmount: "",
+    expiry: 24,
+    slippageBps: 50
+  });
+  const [orderErrors, setOrderErrors] = useState<Record<string, string>>({});
+  const [creatingOrder, setCreatingOrder] = useState(false);
+  const [transactions, setTransactions] = useState<Transaction[]>([]);
+  const [balanceRefreshing, setBalanceRefreshing] = useState(false);
+  const [showPortfolio, setShowPortfolio] = useState(false);
+  const { confirm, ConfirmDialogComponent } = useConfirmDialog();
   const copy = async (text: string) => {
     try {
       await navigator.clipboard.writeText(text);
-      setToast({ type: "success", msg: "Copied" });
-      setTimeout(() => setToast(null), 1500);
-    } catch {}
+      toast.success("Copied to clipboard");
+    } catch {
+      toast.error("Failed to copy");
+    }
   };
 
   const fetchOrders = async () => {
@@ -77,14 +96,14 @@ export default function Home() {
     }
   };
 
+  const loadTransactions = () => {
+    setTransactions(transactionStorage.getHistory());
+  };
+
   useEffect(() => {
     fetchOrders();
+    loadTransactions();
   }, []);
-  useEffect(() => {
-    if (!toast) return;
-    const t = setTimeout(() => setToast(null), 3000);
-    return () => clearTimeout(t);
-  }, [toast]);
 
   const fillOrder = async (o: Order) => {
     setActionMsg(null);
@@ -105,23 +124,321 @@ export default function Home() {
       setActionMsg(
         "Fetched include_sensitive order details (server). Ready to trigger local fill.",
       );
-      setToast({ type: "success", msg: "Fetched include_sensitive details" });
+      toast.success("Fetched include_sensitive details");
       console.log("/api/fill response", json.data);
     } catch (e) {
       setActionMsg(`Fill error: ${(e as Error).message}`);
-      setToast({ type: "error", msg: (e as Error).message });
+      toast.error((e as Error).message);
     }
   };
 
-  // Token registry dropdown helpers
-  const ETH_ADDR = process.env.NEXT_PUBLIC_ETH_ADDRESS || "";
-  const USDC_ADDR = process.env.NEXT_PUBLIC_USDC_ADDRESS || "";
+  // Token registry dropdown helpers - use deployed addresses
+  const ETH_ADDR = process.env.NEXT_PUBLIC_ETH_ADDRESS || "0x2166950b7d3921880812624b056024a45e07908b4d1fd51885a759bfd71223ec";
+  const USDC_ADDR = process.env.NEXT_PUBLIC_USDC_ADDRESS || "0x10fdd3f2dfdd284aca2bf43cac75023f7ac8fda7fae20f4930680cec37ad92aa";
   const tokenOptions = [
     { label: "ETH", address: ETH_ADDR, ticker: "ETH-USD", decimals: 18 },
     { label: "USDC", address: USDC_ADDR, ticker: "USDC-USD", decimals: 6 },
-  ];
+  ].filter(t => t.address && t.address.trim() !== "");
   const findToken = (addr: string) =>
     tokenOptions.find((t) => t.address?.toLowerCase() === addr?.toLowerCase());
+
+  const renderTabContent = () => {
+    if (activeTab === "history") {
+      return (
+        <TransactionHistory
+          transactions={transactions}
+          onClearHistory={() => {
+            transactionStorage.clearHistory();
+            loadTransactions();
+            toast.success("Transaction history cleared");
+          }}
+        />
+      );
+    }
+
+    if (activeTab === "received") {
+      // Filter orders where the user is acting as a buyer/taker
+      const receivedOrders = orders.filter(o => {
+        // This would typically check if the current user is the intended recipient
+        // For now, we'll show all orders as "receivable"
+        return true;
+      });
+
+      return (
+        <div className="section">
+          <h3 style={{ margin: "0 0 16px 0" }}>Received Orders</h3>
+          <p style={{ color: "#9aa3ad", marginBottom: 16 }}>
+            Orders you can fill (buying from other users)
+          </p>
+          {renderOrdersList(receivedOrders, "received")}
+        </div>
+      );
+    }
+
+    // Default: submitted orders (orders you created)
+    return (
+      <div className="section">
+        <h3 style={{ margin: "0 0 16px 0" }}>Your Submitted Orders</h3>
+        <p style={{ color: "#9aa3ad", marginBottom: 16 }}>
+          Orders you created (selling your tokens)
+        </p>
+        {renderOrdersList(orders, "submitted")}
+      </div>
+    );
+  };
+
+  const renderOrdersList = (ordersList: Order[], type: "submitted" | "received") => {
+    if (loading) {
+      return <OrderListSkeleton />;
+    }
+
+    const filteredOrders = ordersList.filter((o) => {
+      const q = search.trim().toLowerCase();
+      if (!q) return true;
+      return (
+        o.sellTokenAddress.toLowerCase().includes(q) ||
+        o.buyTokenAddress.toLowerCase().includes(q) ||
+        (o as any).status?.toLowerCase?.().includes(q)
+      );
+    });
+
+    if (filteredOrders.length === 0) {
+      return (
+        <div style={{ textAlign: "center", padding: "40px 20px" }}>
+          <div style={{ fontSize: 48, marginBottom: 16 }}>
+            {type === "submitted" ? "📝" : "📥"}
+          </div>
+          <h3 style={{ margin: "0 0 8px 0", color: "#9aa3ad" }}>
+            {type === "submitted" ? "No orders created" : "No orders available"}
+          </h3>
+          <p style={{ margin: 0, color: "#6b7280", fontSize: 14 }}>
+            {type === "submitted"
+              ? "Create your first order to start trading"
+              : "No orders available to fill right now"
+            }
+          </p>
+        </div>
+      );
+    }
+
+    return (
+      <ul style={{ listStyle: "none", padding: 0 }}>
+        {filteredOrders.map((o) => (
+          <li
+            key={o.orderId}
+            style={{
+              border: "1px solid #1e1e1e",
+              borderRadius: 8,
+              padding: 16,
+              marginTop: 12,
+              background: "#121212",
+            }}
+          >
+            <div style={{ fontWeight: 600 }}>
+              Escrow: {o.escrowAddress}
+              <span className="copy" onClick={() => copy(o.escrowAddress)}>
+                Copy
+              </span>
+            </div>
+            <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "4px" }}>
+              <span>Sell: {formatTokenAmount(o.sellTokenAddress, o.sellTokenAmount)}</span>
+              <TokenBadge
+                symbol={findToken(o.sellTokenAddress)?.label || "???"}
+                address={o.sellTokenAddress}
+              />
+              <span className="copy" onClick={() => copy(o.sellTokenAddress)}>
+                Copy
+              </span>
+            </div>
+            <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+              <span>Buy: {formatTokenAmount(o.buyTokenAddress, o.buyTokenAmount)}</span>
+              <TokenBadge
+                symbol={findToken(o.buyTokenAddress)?.label || "???"}
+                address={o.buyTokenAddress}
+              />
+              <span className="copy" onClick={() => copy(o.buyTokenAddress)}>
+                Copy
+              </span>
+            </div>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 8 }}>
+              <div style={{ opacity: 0.75, fontSize: 12 }}>
+                Order ID: {o.orderId.substring(0, 8)}...
+                <span className="copy" onClick={() => copy(o.orderId)}>
+                  Copy
+                </span>
+              </div>
+              <OrderStatusWithContext order={o} size="sm" />
+            </div>
+
+            {type === "received" && (
+              <>
+                <button
+                  className="btn btn-sm"
+                  style={{ marginTop: 8 }}
+                  onClick={() => fillOrder(o)}
+                >
+                  Fetch fill details
+                </button>
+                <button
+                  className="btn btn-sm"
+                  style={{ marginLeft: 8 }}
+                  onClick={async () => {
+                    setActionMsg(null);
+                    setExecutingId(o.orderId);
+
+                    let hasError = false;
+                    let hasSuccess = false;
+                    let exitCode = null;
+                    let lastMessage = "";
+
+                    try {
+                      const resp = await fetch(
+                        `/api/fill/stream?orderId=${o.orderId}`,
+                      );
+                      if (!resp.ok || !resp.body)
+                        throw new Error("Stream failed");
+                      const reader = resp.body.getReader();
+                      const dec = new TextDecoder();
+
+                      while (true) {
+                        const { done, value } = await reader.read();
+                        if (done) break;
+                        const chunk = dec.decode(value);
+                        const lines = chunk.split(/\n/).filter(Boolean);
+
+                        for (const line of lines) {
+                          const message = line.replace(/^data: /, "");
+                          lastMessage = message;
+
+                          // Check for completion and exit code
+                          if (message.startsWith("done:")) {
+                            const code = message.match(/done: (\d+)/)?.[1];
+                            exitCode = code ? parseInt(code) : null;
+                          }
+
+                          // Check for definitive success indicators
+                          if (message.includes("Closed order") || message.includes("Fill operation completed successfully")) {
+                            hasSuccess = true;
+                          }
+
+                          // Check for real error indicators (only actual errors, not info logs)
+                          if (message.includes("[err]") || message.includes("Fill failed:") ||
+                              (message.includes("Error") && !message.includes("CREATE ERROR")) ||
+                              message.includes("Insufficient balance")) {
+                            hasError = true;
+                          }
+
+                          // Show appropriate toast messages
+                          if (message.includes("[err]") || message.includes("Fill failed:")) {
+                            toast.error(message.slice(0, 120));
+                          } else if (message.includes("Closed order") || message.includes("completed successfully")) {
+                            toast.success(message.slice(0, 120));
+                          } else if (message.includes("Insufficient balance")) {
+                            toast.error(message.slice(0, 120));
+                          } else if (message && !message.startsWith("done:") && !message.includes("CREATE ERROR")) {
+                            // Only show non-CREATE ERROR info messages
+                            toast.info(message.slice(0, 120));
+                          }
+                        }
+                      }
+
+                      // Determine success based on multiple factors
+                      const isSuccess = hasSuccess && !hasError && (exitCode === 0 || exitCode === null);
+
+                      if (isSuccess) {
+                        await fetchOrders();
+                        setActionMsg("Fill completed successfully. Order closed.");
+                        toast.success("Order filled and closed successfully!");
+
+                        // Log successful fill to transaction history
+                        transactionStorage.addTransaction({
+                          type: "order_filled",
+                          orderId: o.orderId,
+                          sellTokenAddress: o.sellTokenAddress,
+                          sellTokenAmount: o.sellTokenAmount,
+                          buyTokenAddress: o.buyTokenAddress,
+                          buyTokenAmount: o.buyTokenAmount,
+                          status: "completed",
+                          role: "taker",
+                          txHash: lastMessage.match(/0x[a-fA-F0-9]{64}/)?.[0]
+                        });
+                        loadTransactions();
+                      } else if (hasError || exitCode !== 0) {
+                        setActionMsg(`Fill failed (exit code: ${exitCode || 'unknown'})`);
+                        toast.error("Fill operation failed - order remains open");
+                      } else {
+                        setActionMsg("Fill status unclear - check order list");
+                        await fetchOrders(); // Refresh to see current state
+                      }
+                    } catch (e) {
+                      setActionMsg(`Execute error: ${(e as Error).message}`);
+                      toast.error((e as Error).message);
+                    }
+                    setExecutingId(null);
+                  }}
+                  disabled={executingId === o.orderId}
+                >
+                  {executingId === o.orderId
+                    ? "Executing..."
+                    : "Execute Local Fill"}
+                </button>
+              </>
+            )}
+
+            <Link href={`/order/${o.orderId}`} style={{ float: "right" }}>
+              Details →
+            </Link>
+
+            {type === "submitted" && (
+              <button
+                className="btn btn-sm btn-danger"
+                style={{ marginLeft: 8 }}
+                onClick={async () => {
+                  const confirmed = await confirm({
+                    title: "Cancel Order",
+                    message: `Are you sure you want to cancel this order?\n\nSelling: ${formatTokenAmount(o.sellTokenAddress, o.sellTokenAmount)}\nFor: ${formatTokenAmount(o.buyTokenAddress, o.buyTokenAmount)}\n\nThis action cannot be undone.`,
+                    confirmText: "Yes, Cancel Order",
+                    cancelText: "Keep Order",
+                    type: "danger"
+                  });
+
+                  if (!confirmed) return;
+
+                  setActionMsg(null);
+                  const res = await fetch("/api/order/cancel", {
+                    method: "POST",
+                    headers: { "content-type": "application/json" },
+                    body: JSON.stringify({ orderId: o.orderId }),
+                  });
+                  const json = await res.json();
+                  if (!json.success) {
+                    toast.error(json.error || "Cancel failed");
+                  } else {
+                    toast.success("Order cancelled");
+                    // Log cancellation to history
+                    transactionStorage.addTransaction({
+                      type: "order_cancelled",
+                      orderId: o.orderId,
+                      sellTokenAddress: o.sellTokenAddress,
+                      sellTokenAmount: o.sellTokenAmount,
+                      buyTokenAddress: o.buyTokenAddress,
+                      buyTokenAmount: o.buyTokenAmount,
+                      status: "completed",
+                      role: "maker"
+                    });
+                    loadTransactions();
+                    setTimeout(fetchOrders, 500);
+                  }
+                }}
+              >
+                Cancel
+              </button>
+            )}
+          </li>
+        ))}
+      </ul>
+    );
+  };
 
   async function loadUsdHint(addr: string, setFn: (v: number | null) => void) {
     const token = findToken(addr);
@@ -129,16 +446,144 @@ export default function Home() {
       setFn(null);
       return;
     }
-    const res = await fetch(
-      `/api/chart?ticker=${encodeURIComponent(token.ticker)}&interval=day&interval_multiplier=1`,
-    );
-    const json = await res.json();
-    const last =
-      Array.isArray(json?.data) && json.data.length
-        ? json.data[json.data.length - 1]
-        : null;
-    setFn(last ? Number(last.close) : null);
+    try {
+      const res = await fetch(`/api/price?ticker=${encodeURIComponent(token.ticker)}`);
+      const json = await res.json();
+      setFn(json?.success ? json.price : null);
+    } catch {
+      setFn(null);
+    }
   }
+
+  const calculateMarketPrice = async (direction: "sell" | "buy") => {
+    if (!orderParams.sellToken || !orderParams.buyToken) {
+      toast.error("Please select both tokens first");
+      return;
+    }
+
+    const amount = direction === "sell" ? orderParams.sellAmount : orderParams.buyAmount;
+    if (!amount || Number(amount) <= 0) {
+      toast.error(`Please enter a valid ${direction} amount`);
+      return;
+    }
+
+    const fromToken = direction === "sell" ? orderParams.sellToken : orderParams.buyToken;
+    const toToken = direction === "sell" ? orderParams.buyToken : orderParams.sellToken;
+
+    const fromTokenData = tokenOptions.find(t => t.address === fromToken);
+    const toTokenData = tokenOptions.find(t => t.address === toToken);
+
+    if (!fromTokenData || !toTokenData) return;
+
+    try {
+      const [fromPriceRes, toPriceRes] = await Promise.all([
+        fetch(`/api/price?ticker=${fromTokenData.ticker}`),
+        fetch(`/api/price?ticker=${toTokenData.ticker}`)
+      ]);
+
+      const [fromPriceData, toPriceData] = await Promise.all([
+        fromPriceRes.json(),
+        toPriceRes.json()
+      ]);
+
+      const fromPrice = fromPriceData?.success ? fromPriceData.price : null;
+      const toPrice = toPriceData?.success ? toPriceData.price : null;
+
+      if (fromPrice && toPrice) {
+        const exchangeRate = fromPrice / toPrice;
+        const calculatedAmount = (Number(amount) * exchangeRate).toFixed(6);
+
+        if (direction === "sell") {
+          setOrderParams(prev => ({ ...prev, buyAmount: calculatedAmount }));
+          toast.success(`Calculated ${calculatedAmount} ${toTokenData.label} at market price`);
+        } else {
+          setOrderParams(prev => ({ ...prev, sellAmount: calculatedAmount }));
+          toast.success(`Calculated ${calculatedAmount} ${toTokenData.label} at market price`);
+        }
+      } else {
+        toast.error("Failed to fetch market prices");
+      }
+    } catch (error) {
+      toast.error("Error calculating market price");
+    }
+  };
+
+  const validateOrder = (): boolean => {
+    const errors: Record<string, string> = {};
+
+    if (!orderParams.sellToken) errors.sellToken = "Sell token is required";
+    if (!orderParams.buyToken) errors.buyToken = "Buy token is required";
+    if (!orderParams.sellAmount || Number(orderParams.sellAmount) <= 0) {
+      errors.sellAmount = "Please enter a valid sell amount";
+    }
+    if (!orderParams.buyAmount || Number(orderParams.buyAmount) <= 0) {
+      errors.buyAmount = "Please enter a valid buy amount";
+    }
+    if (orderParams.sellToken === orderParams.buyToken) {
+      errors.buyToken = "Buy token must be different from sell token";
+    }
+
+    setOrderErrors(errors);
+    return Object.keys(errors).length === 0;
+  };
+
+  const createOrder = async () => {
+    if (!validateOrder()) return;
+
+    setCreatingOrder(true);
+    try {
+      const res = await fetch("/api/order/create", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          sellTokenAddress: orderParams.sellToken,
+          sellTokenAmount: orderParams.sellAmount,
+          buyTokenAddress: orderParams.buyToken,
+          buyTokenAmount: orderParams.buyAmount,
+          expiryHours: orderParams.expiry,
+          slippageBps: orderParams.slippageBps,
+        }),
+      });
+
+      const json = await res.json();
+      if (!json.success) throw new Error(json.error || "Create failed");
+
+      toast.success("Order created successfully!");
+
+      // Log transaction to history
+      transactionStorage.addTransaction({
+        type: "order_created",
+        orderId: json.orderId || `order_${Date.now()}`,
+        sellTokenAddress: orderParams.sellToken,
+        sellTokenAmount: orderParams.sellAmount,
+        buyTokenAddress: orderParams.buyToken,
+        buyTokenAmount: orderParams.buyAmount,
+        status: "completed",
+        role: "maker"
+      });
+      loadTransactions();
+
+      // Reset form
+      setOrderParams({
+        sellToken: "",
+        sellAmount: "",
+        buyToken: "",
+        buyAmount: "",
+        expiry: 24,
+        slippageBps: 50
+      });
+      setSellUsd(null);
+      setBuyUsd(null);
+      setOrderErrors({});
+
+      // Refresh orders
+      await fetchOrders();
+    } catch (e) {
+      toast.error((e as Error).message);
+    } finally {
+      setCreatingOrder(false);
+    }
+  };
 
   return (
     <main className="container">
@@ -148,6 +593,13 @@ export default function Home() {
           <span className="brand-badge">Aztec Private</span>
         </div>
         <div className="row" style={{ gap: 8 }}>
+          <button
+            className="btn btn-ghost"
+            onClick={() => setShowPortfolio(true)}
+            style={{ display: "flex", alignItems: "center", gap: 4 }}
+          >
+            💰 Portfolio
+          </button>
           <span className="pill">Sandbox</span>
         </div>
       </div>
@@ -168,15 +620,9 @@ export default function Home() {
             });
             const json = await res.json();
             if (!json.success) {
-              setToast({
-                type: "error",
-                msg: json.error || "Cancel all failed",
-              });
+              toast.error(json.error || "Cancel all failed");
             } else {
-              setToast({
-                type: "success",
-                msg: `Cancelled ${json.count ?? "open"} orders`,
-              });
+              toast.success(`Cancelled ${json.count ?? "open"} orders`);
               await fetchOrders();
             }
           }}
@@ -185,147 +631,205 @@ export default function Home() {
           Cancel All
         </button>
       </div>
-      <div className="grid section">
-        <div className="card">
-          <div className="row" style={{ justifyContent: "space-between" }}>
-            <div className="pill">OTC</div>
+      <div className="trading-grid">
+        {/* Enhanced Trading Terminal */}
+        <div className="card trading-terminal">
+          <div className="row" style={{ justifyContent: "space-between", marginBottom: 16 }}>
+            <div className="pill">Create Order</div>
             <div className="toolbar">
-              <span className="pill">Ethereum</span>
+              <span className="pill">Aztec</span>
             </div>
           </div>
-          <div className="section" style={{ fontSize: 12, color: "#9aa3ad" }}>
-            Send
-          </div>
-          <div className="row section">
-            <select
-              className="input"
-              value={filters.sell}
-              onChange={(e) => {
-                setFilters({ ...filters, sell: e.target.value });
-                void loadUsdHint(e.target.value, setSellUsd);
+
+          {/* Sell Token Section */}
+          <div style={{ marginBottom: 16 }}>
+            <div style={{ fontSize: 12, color: "#9aa3ad", marginBottom: 6 }}>
+              You're Selling
+            </div>
+            <TokenSelect
+              value={orderParams.sellToken}
+              onChange={(value) => {
+                setOrderParams({ ...orderParams, sellToken: value });
+                void loadUsdHint(value, setSellUsd);
+                setOrderErrors(prev => ({ ...prev, sellToken: "" }));
               }}
-            >
-              <option value="">Custom address…</option>
-              {tokenOptions.map((t) => (
-                <option key={t.label} value={t.address}>
-                  {t.label} ({t.address?.slice(0, 6)}…{t.address?.slice(-4)})
-                </option>
-              ))}
-            </select>
-          </div>
-          <div className="row section">
-            <input
-              className="input"
-              placeholder="Or paste sell token address"
-              value={filters.sell}
-              onChange={(e) => setFilters({ ...filters, sell: e.target.value })}
+              options={tokenOptions}
+              placeholder="Select token to sell..."
             />
+            {orderErrors.sellToken && <p style={{ color: "#ef4444", fontSize: 12, margin: "4px 0 0 0" }}>{orderErrors.sellToken}</p>}
           </div>
-          <div className="row section">
-            <input
-              className="input"
-              placeholder="Sell amount"
-              value={sellAmount}
-              onChange={(e) => setSellAmount(e.target.value)}
-            />
-            <span
-              className="pill"
-              style={{ minWidth: 120, textAlign: "center" }}
-            >
-              {sellUsd && sellAmount
-                ? `~ $${(
-                    Number(sellAmount || 0) * Number(sellUsd || 0)
-                  ).toLocaleString()}`
-                : "~ $0.00"}
-            </span>
+
+          <div style={{ marginBottom: 16 }}>
+            <div className="row" style={{ gap: 8 }}>
+              <input
+                className="input"
+                placeholder="0.0"
+                value={orderParams.sellAmount}
+                onChange={(e) => {
+                  setOrderParams({ ...orderParams, sellAmount: e.target.value });
+                  setOrderErrors(prev => ({ ...prev, sellAmount: "" }));
+                }}
+                style={{ flex: 1 }}
+              />
+              <span
+                className="pill"
+                style={{ minWidth: 90, textAlign: "center", fontSize: 11 }}
+              >
+                {sellUsd && orderParams.sellAmount
+                  ? `$${(Number(orderParams.sellAmount || 0) * Number(sellUsd || 0)).toLocaleString()}`
+                  : "$0.00"}
+              </span>
+            </div>
+            {orderErrors.sellAmount && <p style={{ color: "#ef4444", fontSize: 12, margin: "4px 0 0 0" }}>{orderErrors.sellAmount}</p>}
           </div>
-          <div className="section" style={{ fontSize: 12, color: "#9aa3ad" }}>
-            Receive
-          </div>
-          <div className="row section">
-            <select
-              className="input"
-              value={filters.buy}
-              onChange={(e) => {
-                setFilters({ ...filters, buy: e.target.value });
-                void loadUsdHint(e.target.value, setBuyUsd);
+
+          {/* Market Price Button */}
+          {orderParams.sellToken && orderParams.buyToken && orderParams.sellAmount && (
+            <div style={{ marginBottom: 16 }}>
+              <button
+                className="btn btn-sm"
+                onClick={() => calculateMarketPrice("sell")}
+                style={{ width: "100%", fontSize: 11, padding: "6px 8px" }}
+              >
+                📈 Calculate at Market Price
+              </button>
+            </div>
+          )}
+
+          {/* Buy Token Section */}
+          <div style={{ marginBottom: 16 }}>
+            <div style={{ fontSize: 12, color: "#9aa3ad", marginBottom: 6 }}>
+              You're Receiving
+            </div>
+            <TokenSelect
+              value={orderParams.buyToken}
+              onChange={(value) => {
+                setOrderParams({ ...orderParams, buyToken: value });
+                void loadUsdHint(value, setBuyUsd);
+                setOrderErrors(prev => ({ ...prev, buyToken: "" }));
               }}
-            >
-              <option value="">Custom address…</option>
-              {tokenOptions.map((t) => (
-                <option key={t.label} value={t.address}>
-                  {t.label} ({t.address?.slice(0, 6)}…{t.address?.slice(-4)})
-                </option>
-              ))}
-            </select>
-          </div>
-          <div className="row section">
-            <input
-              className="input"
-              placeholder="Or paste buy token address"
-              value={filters.buy}
-              onChange={(e) => setFilters({ ...filters, buy: e.target.value })}
+              options={tokenOptions}
+              placeholder="Select token to receive..."
             />
+            {orderErrors.buyToken && <p style={{ color: "#ef4444", fontSize: 12, margin: "4px 0 0 0" }}>{orderErrors.buyToken}</p>}
           </div>
-          <div className="row section">
-            <input
-              className="input"
-              placeholder="Buy amount"
-              value={buyAmount}
-              onChange={(e) => setBuyAmount(e.target.value)}
-            />
-            <span
-              className="pill"
-              style={{ minWidth: 120, textAlign: "center" }}
-            >
-              {buyUsd && buyAmount
-                ? `~ $${(
-                    Number(buyAmount || 0) * Number(buyUsd || 0)
-                  ).toLocaleString()}`
-                : "~ $0.00"}
-            </span>
+
+          <div style={{ marginBottom: 16 }}>
+            <div className="row" style={{ gap: 8 }}>
+              <input
+                className="input"
+                placeholder="0.0"
+                value={orderParams.buyAmount}
+                onChange={(e) => {
+                  setOrderParams({ ...orderParams, buyAmount: e.target.value });
+                  setOrderErrors(prev => ({ ...prev, buyAmount: "" }));
+                }}
+                style={{ flex: 1 }}
+              />
+              <span
+                className="pill"
+                style={{ minWidth: 90, textAlign: "center", fontSize: 11 }}
+              >
+                {buyUsd && orderParams.buyAmount
+                  ? `$${(Number(orderParams.buyAmount || 0) * Number(buyUsd || 0)).toLocaleString()}`
+                  : "$0.00"}
+              </span>
+            </div>
+            {orderErrors.buyAmount && <p style={{ color: "#ef4444", fontSize: 12, margin: "4px 0 0 0" }}>{orderErrors.buyAmount}</p>}
           </div>
-          <div className="row section">
-            <button className="btn" onClick={fetchOrders}>
-              Apply Filters
-            </button>
-            <div className="spacer" />
+
+          {/* Exchange Rate Display */}
+          {orderParams.sellAmount && orderParams.buyAmount && Number(orderParams.sellAmount) > 0 && Number(orderParams.buyAmount) > 0 && (
+            <div style={{ marginBottom: 16, padding: 10, background: "#1a1a1a", borderRadius: 6 }}>
+              <div style={{ fontSize: 11, color: "#9aa3ad", marginBottom: 2 }}>Exchange Rate</div>
+              <div style={{ fontSize: 12 }}>
+                1 {findToken(orderParams.sellToken)?.label} = {(Number(orderParams.buyAmount) / Number(orderParams.sellAmount)).toFixed(4)} {findToken(orderParams.buyToken)?.label}
+              </div>
+            </div>
+          )}
+
+          {/* Order Settings */}
+          <div style={{ marginBottom: 16 }}>
+            <div style={{ fontSize: 12, color: "#9aa3ad", marginBottom: 6 }}>Settings</div>
+            <div className="row" style={{ gap: 6 }}>
+              <select
+                className="input"
+                value={orderParams.expiry}
+                onChange={(e) => setOrderParams({ ...orderParams, expiry: Number(e.target.value) })}
+                style={{ flex: 1, fontSize: 11, padding: "6px 8px" }}
+              >
+                <option value={1}>1h</option>
+                <option value={6}>6h</option>
+                <option value={24}>24h</option>
+                <option value={72}>3d</option>
+                <option value={168}>1w</option>
+              </select>
+              <select
+                className="input"
+                value={orderParams.slippageBps}
+                onChange={(e) => setOrderParams({ ...orderParams, slippageBps: Number(e.target.value) })}
+                style={{ flex: 1, fontSize: 11, padding: "6px 8px" }}
+              >
+                <option value={10}>0.1%</option>
+                <option value={50}>0.5%</option>
+                <option value={100}>1%</option>
+                <option value={250}>2.5%</option>
+              </select>
+            </div>
+          </div>
+
+          {/* Create Order Button */}
+          <div style={{ marginBottom: 12 }}>
             <button
               className="btn btn-primary"
-              onClick={async () => {
-                setActionMsg(null);
-                setToast(null);
-                setCreating(true);
-                const res = await fetch("/api/order/create", {
-                  method: "POST",
-                });
-                const json = await res.json();
-                if (!json.success) {
-                  setActionMsg(`Create order error: ${json.error}`);
-                  setToast({
-                    type: "error",
-                    msg: json.error || "Create failed",
-                  });
-                } else {
-                  setActionMsg("Created order via CLI. Refreshing...");
-                  setToast({ type: "success", msg: "Order created" });
-                  await fetchOrders();
-                }
-                setCreating(false);
-              }}
-              disabled={creating}
+              onClick={createOrder}
+              disabled={creatingOrder}
+              style={{ width: "100%", padding: "10px 16px", fontSize: 13, fontWeight: 600 }}
             >
-              {creating ? "Creating..." : "Create Order"}
+              {creatingOrder ? "Creating..." : "Create Order"}
+            </button>
+          </div>
+
+          {/* Quick Actions */}
+          <div className="row" style={{ gap: 6 }}>
+            <button
+              className="btn btn-sm"
+              onClick={fetchOrders}
+              disabled={loading}
+              style={{ flex: 1, fontSize: 10, padding: "4px 8px" }}
+            >
+              {loading ? "..." : "🔄"}
+            </button>
+            <button
+              className="btn btn-sm"
+              onClick={() => {
+                setOrderParams({
+                  sellToken: "",
+                  sellAmount: "",
+                  buyToken: "",
+                  buyAmount: "",
+                  expiry: 24,
+                  slippageBps: 50
+                });
+                setSellUsd(null);
+                setBuyUsd(null);
+                setOrderErrors({});
+              }}
+              style={{ flex: 1, fontSize: 10, padding: "4px 8px" }}
+            >
+              🗑️
             </button>
           </div>
         </div>
-        <div>
-          <div className="row" style={{ gap: 8, marginBottom: 8 }}>
+
+        {/* Chart Area */}
+        <div className="chart-area">
+          <div className="chart-controls">
             <select
               className="input"
               value={ticker}
               onChange={(e) => setTicker(e.target.value)}
-              style={{ width: 180 }}
+              style={{ width: 120 }}
             >
               <option value="ETH-USD">ETH-USD</option>
               <option value="BTC-USD">BTC-USD</option>
@@ -335,41 +839,22 @@ export default function Home() {
               className="input"
               value={interval}
               onChange={(e) => setInterval(e.target.value as any)}
-              style={{ width: 140 }}
+              style={{ width: 100 }}
             >
-              <option value="minute">Minute</option>
-              <option value="day">Day</option>
-              <option value="week">Week</option>
-              <option value="month">Month</option>
-              <option value="year">Year</option>
-            </select>
-            <select
-              className="input"
-              value={intervalMultiplier}
-              onChange={(e) => setIntervalMultiplier(Number(e.target.value))}
-              style={{ width: 120 }}
-            >
-              <option value={1}>x1</option>
-              <option value={5}>x5</option>
-              <option value={15}>x15</option>
+              <option value="minute">1m</option>
+              <option value="day">1d</option>
+              <option value="week">1w</option>
+              <option value="month">1M</option>
             </select>
             <select
               className="input"
               value={chartType}
               onChange={(e) => setChartType(e.target.value as any)}
-              style={{ width: 140 }}
+              style={{ width: 100 }}
             >
               <option value="area">Area</option>
               <option value="candles">Candles</option>
             </select>
-            <button
-              className="btn"
-              onClick={() => {
-                /* trigger Chart props change */ setTicker((t) => t);
-              }}
-            >
-              Refresh
-            </button>
           </div>
           <Chart
             ticker={ticker}
@@ -377,20 +862,25 @@ export default function Home() {
             intervalMultiplier={intervalMultiplier}
             type={chartType}
           />
-          <div className="tabs">
-            {(["submitted", "received", "history"] as const).map((t) => (
-              <button
-                key={t}
-                onClick={() => setActiveTab(t)}
-                className={`tab ${activeTab === t ? "active" : ""}`}
-              >
-                {t === "submitted"
-                  ? "Submitted Orders"
-                  : t === "received"
-                    ? "Received Orders"
-                    : "Order History"}
-              </button>
-            ))}
+
+          {/* Order History under chart */}
+          <div style={{ marginTop: 24 }}>
+            <div className="tabs" style={{ marginBottom: 16 }}>
+              {(["submitted", "received", "history"] as const).map((t) => (
+                <button
+                  key={t}
+                  onClick={() => setActiveTab(t)}
+                  className={`tab ${activeTab === t ? "active" : ""}`}
+                >
+                  {t === "submitted"
+                    ? "My Orders"
+                    : t === "received"
+                      ? "Available Orders"
+                      : "Transaction History"}
+                </button>
+              ))}
+            </div>
+            {renderTabContent()}
           </div>
         </div>
       </div>
@@ -435,158 +925,18 @@ export default function Home() {
         </select>
       </div>
       {error && <p style={{ color: "crimson" }}>Error: {error}</p>}
-      <ul style={{ listStyle: "none", padding: 0 }}>
-        {orders
-          .filter((o) => {
-            const q = search.trim().toLowerCase();
-            if (!q) return true;
-            return (
-              o.sellTokenAddress.toLowerCase().includes(q) ||
-              o.buyTokenAddress.toLowerCase().includes(q) ||
-              (o as any).status?.toLowerCase?.().includes(q)
-            );
-          })
-          .map((o) => (
-            <li
-              key={o.orderId}
-              style={{
-                border: "1px solid #1e1e1e",
-                borderRadius: 8,
-                padding: 16,
-                marginTop: 12,
-                background: "#121212",
-              }}
-            >
-              <div style={{ fontWeight: 600 }}>
-                Escrow: {o.escrowAddress}
-                <span className="copy" onClick={() => copy(o.escrowAddress)}>
-                  Copy
-                </span>
-              </div>
-              <div>
-                Sell: {formatTokenAmount(o.sellTokenAddress, o.sellTokenAmount)}{" "}
-                @ {o.sellTokenAddress}
-                <span className="copy" onClick={() => copy(o.sellTokenAddress)}>
-                  Copy
-                </span>
-              </div>
-              <div>
-                Buy: {formatTokenAmount(o.buyTokenAddress, o.buyTokenAmount)} @{" "}
-                {o.buyTokenAddress}
-                <span className="copy" onClick={() => copy(o.buyTokenAddress)}>
-                  Copy
-                </span>
-              </div>
-              <div style={{ opacity: 0.75, fontSize: 12, marginTop: 4 }}>
-                Order ID: {o.orderId}
-                <span className="copy" onClick={() => copy(o.orderId)}>
-                  Copy
-                </span>
-                {" · "}
-                Status: {o.status || "open"}
-                {o.createdAt ? (
-                  <>
-                    {" · Created: "}
-                    {new Date(o.createdAt).toLocaleString()}
-                  </>
-                ) : null}
-              </div>
-              <button
-                className="btn btn-sm"
-                style={{ marginTop: 8 }}
-                onClick={() => fillOrder(o)}
-              >
-                Fetch fill details
-              </button>
-              <button
-                className="btn btn-sm"
-                style={{ marginLeft: 8 }}
-                onClick={async () => {
-                  setActionMsg(null);
-                  setExecutingId(o.orderId);
-                  try {
-                    const resp = await fetch(
-                      `/api/fill/stream?orderId=${o.orderId}`,
-                    );
-                    if (!resp.ok || !resp.body)
-                      throw new Error("Stream failed");
-                    const reader = resp.body.getReader();
-                    const dec = new TextDecoder();
-                    while (true) {
-                      const { done, value } = await reader.read();
-                      if (done) break;
-                      const chunk = dec.decode(value);
-                      const lines = chunk.split(/\n/).filter(Boolean);
-                      const last = lines[lines.length - 1]?.replace(
-                        /^data: /,
-                        "",
-                      );
-                      if (last)
-                        setToast({ type: "success", msg: last.slice(0, 120) });
-                    }
-                    await fetchOrders();
-                    setActionMsg("Executed local fill_by_id.");
-                  } catch (e) {
-                    setActionMsg(`Execute error: ${(e as Error).message}`);
-                    setToast({ type: "error", msg: (e as Error).message });
-                  }
-                  setExecutingId(null);
-                }}
-                disabled={executingId === o.orderId}
-              >
-                {executingId === o.orderId
-                  ? "Executing..."
-                  : "Execute Local Fill"}
-              </button>
-              <Link href={`/order/${o.orderId}`} style={{ float: "right" }}>
-                Details →
-              </Link>
-              <button
-                className="btn btn-sm btn-danger"
-                style={{ marginLeft: 8 }}
-                onClick={async () => {
-                  setActionMsg(null);
-                  const res = await fetch("/api/order/cancel", {
-                    method: "POST",
-                    headers: { "content-type": "application/json" },
-                    body: JSON.stringify({ orderId: o.orderId }),
-                  });
-                  const json = await res.json();
-                  if (!json.success) {
-                    setToast({
-                      type: "error",
-                      msg: json.error || "Cancel failed",
-                    });
-                  } else {
-                    setToast({ type: "success", msg: "Order cancelled" });
-                    setTimeout(fetchOrders, 500);
-                  }
-                }}
-              >
-                Cancel
-              </button>
-            </li>
-          ))}
-      </ul>
       {actionMsg && <p style={{ marginTop: 12 }}>{actionMsg}</p>}
-      {toast && (
-        <div
-          style={{
-            position: "fixed",
-            bottom: 16,
-            right: 16,
-            background: toast.type === "success" ? "#0c7" : "#c22",
-            color: "white",
-            padding: "10px 14px",
-            borderRadius: 8,
-            boxShadow: "0 4px 12px rgba(0,0,0,0.15)",
-          }}
-          onClick={() => setToast(null)}
-        >
-          {toast.msg}
-        </div>
-      )}
-      {!loading && orders.length === 0 && <p>No open orders.</p>}
+
+      <ConfirmDialogComponent />
+      <PortfolioModal
+        isOpen={showPortfolio}
+        onClose={() => setShowPortfolio(false)}
+        onRefresh={() => {
+          setBalanceRefreshing(true);
+          setTimeout(() => setBalanceRefreshing(false), 2000);
+        }}
+        refreshing={balanceRefreshing}
+      />
     </main>
   );
 }
