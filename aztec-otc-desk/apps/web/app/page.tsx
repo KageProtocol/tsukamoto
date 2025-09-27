@@ -173,6 +173,29 @@ export default function Home() {
                 ? "Executing..."
                 : "Execute Local Fill"}
             </button>
+            <button
+              style={{ marginLeft: 8 }}
+              onClick={async () => {
+                setActionMsg(null);
+                const res = await fetch("/api/order/cancel", {
+                  method: "POST",
+                  headers: { "content-type": "application/json" },
+                  body: JSON.stringify({ orderId: o.orderId }),
+                });
+                const json = await res.json();
+                if (!json.success) {
+                  setToast({
+                    type: "error",
+                    msg: json.error || "Cancel failed",
+                  });
+                } else {
+                  setToast({ type: "success", msg: "Order cancelled" });
+                  await fetchOrders();
+                }
+              }}
+            >
+              Cancel
+            </button>
           </li>
         ))}
       </ul>

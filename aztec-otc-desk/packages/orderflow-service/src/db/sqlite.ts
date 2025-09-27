@@ -234,6 +234,7 @@ export class SQLiteDatabase implements IDatabase {
       buyTokenAmount: BigInt(row.buyTokenAmount), // Convert string back to BigInt
       status: row.status as any,
       expiresAt: row.expiresAt ? Number(row.expiresAt) : undefined,
+      createdAt: row.createdAt,
     };
   }
 }
