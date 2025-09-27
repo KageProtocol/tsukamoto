@@ -58,8 +58,8 @@ const main = async () => {
   console.log("Selected order:", orderToFill.orderId);
 
   // setup PXE (allow override via env BUYER_PXE_ID)
-  const idx = Number(process.env.BUYER_PXE_ID ?? 0);
-  const pxe = await createPXE(Number.isFinite(idx) ? idx : 0);
+  const buyerPxeId = Number(process.env.BUYER_PXE_ID ?? 0);
+  const pxe = await createPXE(Number.isFinite(buyerPxeId) ? buyerPxeId : 0);
   const { buyer } = await getOTCAccounts(pxe);
 
   // instantiate token contracts

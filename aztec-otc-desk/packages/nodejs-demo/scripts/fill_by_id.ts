@@ -1,5 +1,6 @@
 import "dotenv/config";
 import { AztecAddress } from "@aztec/aztec.js";
+import crypto from "crypto";
 import {
   createPXE,
   fillOTCOrder,
@@ -30,9 +31,27 @@ async function main() {
   const pxe = await createPXE(0);
   const { buyer } = await getOTCAccounts(pxe);
 
-  const orders = await getOrders(API_URL);
-  const orderToFill = orders.find((o) => o.orderId === ORDER_ID);
-  if (!orderToFill) throw new Error(`Order ${ORDER_ID} not found`);
+  // fetch order by id with include_sensitive=true (requires HMAC)
+  const ts = Math.floor(Date.now() / 1000).toString();
+  const path = "/order";
+  const body = "";
+  const payload = ["GET", path, ts, body].join("\n");
+  const secret = process.env.API_HMAC_SECRET || "";
+  if (!secret) throw new Error("API_HMAC_SECRET not set for fill_by_id");
+  const sig = crypto.createHmac("sha256", secret).update(payload).digest("hex");
+  const res = await fetch(
+    `${API_URL}${path}?id=${ORDER_ID}&include_sensitive=true`,
+    {
+      method: "GET",
+      headers: { "x-timestamp": ts, "x-signature": sig },
+    },
+  );
+  if (!res.ok) throw new Error(`Failed to fetch order ${ORDER_ID}`);
+  const json = (await res.json()) as { success: boolean; data: any[] };
+  if (!json.success || !json.data || json.data.length === 0) {
+    throw new Error(`Order ${ORDER_ID} not found`);
+  }
+  const orderToFill = json.data[0];
 
   const ethAddress = AztecAddress.fromString(ethDeployment.address);
   const usdcAddress = AztecAddress.fromString(usdcDeployment.address);
