@@ -1,6 +1,6 @@
 
 import { createOrderHandlers } from "./handlers";
-import { SQLiteDatabase } from "./db";
+import { SQLiteDatabase, PostgresDatabase } from "./db";
 
 /**
  * Orderflow Service
@@ -10,8 +10,11 @@ import { SQLiteDatabase } from "./db";
 
 const main = async () => {
   // Create and initialize database
-  const database = new SQLiteDatabase();
-  database.initialize();
+  const usePg = Boolean(process.env.DATABASE_URL);
+  const database: any = usePg
+    ? new PostgresDatabase(process.env.DATABASE_URL)
+    : new SQLiteDatabase();
+  await (database.initialize?.() ?? database.initialize());
   
   // Create handlers with database dependency injection
   const {

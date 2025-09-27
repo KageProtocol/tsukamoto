@@ -7,6 +7,7 @@
     "start": "bun run src/index.ts",
     "dev": "bun run --watch src/index.ts",
     "build": "bun build src/index.ts --outdir dist --target bun",
+    "migrate": "bun run src/db/migrate.ts",
     "test": "bun test",
     "test:watch": "bun test --watch",
     "test:db": "bun test tests/db/",
@@ -14,6 +15,7 @@
     "test:integration": "bun test tests/integration/"
   },
   "dependencies": {
+    "pg": "^8.12.0"
   },
   "devDependencies": {
     "@types/bun": "^1.0.0",

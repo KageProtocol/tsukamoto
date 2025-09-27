@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useState } from "react";
+import { formatTokenAmount } from "../lib/tokens";
 
 type Order = {
   orderId: string;
@@ -21,6 +22,7 @@ export default function Home() {
     msg: string;
   } | null>(null);
   const [executingId, setExecutingId] = useState<string | null>(null);
+  const [creating, setCreating] = useState(false);
   const [filters, setFilters] = useState({
     sell: "",
     buy: "",
@@ -28,6 +30,7 @@ export default function Home() {
     pageSize: 10,
   });
   const apiUrl = "/api/orders"; // use internal proxy to avoid CORS
+  
 
   const fetchOrders = async () => {
     setLoading(true);
@@ -98,16 +101,23 @@ export default function Home() {
         style={{ marginLeft: 8 }}
         onClick={async () => {
           setActionMsg(null);
+          setToast(null);
+          setCreating(true);
           const res = await fetch("/api/order/create", { method: "POST" });
           const json = await res.json();
-          if (!json.success) setActionMsg(`Create order error: ${json.error}`);
-          else {
+          if (!json.success) {
+            setActionMsg(`Create order error: ${json.error}`);
+            setToast({ type: "error", msg: json.error || "Create failed" });
+          } else {
             setActionMsg("Created order via CLI. Refreshing...");
+            setToast({ type: "success", msg: "Order created" });
             await fetchOrders();
           }
+          setCreating(false);
         }}
+        disabled={creating}
       >
-        Create Order
+        {creating ? "Creating..." : "Create Order"}
       </button>
       <div style={{ marginTop: 12, display: "flex", gap: 8 }}>
         <input
@@ -138,10 +148,10 @@ export default function Home() {
           >
             <div style={{ fontWeight: 600 }}>Escrow: {o.escrowAddress}</div>
             <div>
-              Sell: {o.sellTokenAmount} @ {o.sellTokenAddress}
+              Sell: {formatTokenAmount(o.sellTokenAddress, o.sellTokenAmount)} @ {o.sellTokenAddress}
             </div>
             <div>
-              Buy: {o.buyTokenAmount} @ {o.buyTokenAddress}
+              Buy: {formatTokenAmount(o.buyTokenAddress, o.buyTokenAmount)} @ {o.buyTokenAddress}
             </div>
             <button style={{ marginTop: 8 }} onClick={() => fillOrder(o)}>
               Fetch fill details
@@ -151,19 +161,24 @@ export default function Home() {
               onClick={async () => {
                 setActionMsg(null);
                 setExecutingId(o.orderId);
-                const res = await fetch("/api/fill/execute", {
-                  method: "POST",
-                  headers: { "content-type": "application/json" },
-                  body: JSON.stringify({ orderId: o.orderId }),
-                });
-                const json = await res.json();
-                if (!json.success) {
-                  setActionMsg(`Execute error: ${json.error}`);
-                  setToast({ type: "error", msg: json.error });
-                } else {
-                  setActionMsg("Executed local fill_by_id. Check server logs.");
-                  setToast({ type: "success", msg: "Local fill executed" });
+                try {
+                  const resp = await fetch(`/api/fill/stream?orderId=${o.orderId}`);
+                  if (!resp.ok || !resp.body) throw new Error("Stream failed");
+                  const reader = resp.body.getReader();
+                  const dec = new TextDecoder();
+                  while (true) {
+                    const { done, value } = await reader.read();
+                    if (done) break;
+                    const chunk = dec.decode(value);
+                    const lines = chunk.split(/\n/).filter(Boolean);
+                    const last = lines[lines.length - 1]?.replace(/^data: /, "");
+                    if (last) setToast({ type: "success", msg: last.slice(0, 120) });
+                  }
                   await fetchOrders();
+                  setActionMsg("Executed local fill_by_id.");
+                } catch (e) {
+                  setActionMsg(`Execute error: ${(e as Error).message}`);
+                  setToast({ type: "error", msg: (e as Error).message });
                 }
                 setExecutingId(null);
               }}
