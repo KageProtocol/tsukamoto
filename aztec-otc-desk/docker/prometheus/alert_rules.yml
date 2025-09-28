@@ -1,0 +1,170 @@
+groups:
+  - name: aztec-otc-alerts
+    rules:
+      # Service Health Alerts
+      - alert: ServiceDown
+        expr: up == 0
+        for: 1m
+        labels:
+          severity: critical
+          category: availability
+        annotations:
+          summary: "Service {{ $labels.job }} is down"
+          description: "Service {{ $labels.job }} on {{ $labels.instance }} has been down for more than 1 minute."
+
+      # Orderflow API Alerts
+      - alert: HighErrorRate
+        expr: rate(http_requests_total{status=~"5.."}[5m]) / rate(http_requests_total[5m]) > 0.1
+        for: 2m
+        labels:
+          severity: warning
+          category: performance
+        annotations:
+          summary: "High error rate detected"
+          description: "Error rate is {{ $value | humanizePercentage }} for {{ $labels.job }}"
+
+      - alert: HighLatency
+        expr: histogram_quantile(0.95, rate(http_request_duration_seconds_bucket[5m])) > 2
+        for: 2m
+        labels:
+          severity: warning
+          category: performance
+        annotations:
+          summary: "High latency detected"
+          description: "95th percentile latency is {{ $value }}s for {{ $labels.job }}"
+
+      # Database Alerts
+      - alert: DatabaseConnectionsHigh
+        expr: pg_stat_database_numbackends / pg_settings_max_connections > 0.8
+        for: 2m
+        labels:
+          severity: warning
+          category: database
+        annotations:
+          summary: "Database connection usage is high"
+          description: "Database connection usage is {{ $value | humanizePercentage }}"
+
+      - alert: DatabaseSlowQueries
+        expr: rate(pg_stat_database_tup_fetched[5m]) / rate(pg_stat_database_tup_returned[5m]) > 100
+        for: 5m
+        labels:
+          severity: warning
+          category: database
+        annotations:
+          summary: "Potential slow queries detected"
+          description: "High tuple fetch ratio indicates potential slow queries"
+
+      # OTC Business Logic Alerts
+      - alert: OrderCreationFailures
+        expr: rate(otc_order_creation_failures_total[5m]) > 0.1
+        for: 1m
+        labels:
+          severity: critical
+          category: business
+        annotations:
+          summary: "High order creation failure rate"
+          description: "Order creation failure rate is {{ $value }} per second"
+
+      - alert: FillExecutionFailures
+        expr: rate(otc_fill_execution_failures_total[5m]) > 0.05
+        for: 1m
+        labels:
+          severity: critical
+          category: business
+        annotations:
+          summary: "High fill execution failure rate"
+          description: "Fill execution failure rate is {{ $value }} per second"
+
+      - alert: StaleOrders
+        expr: otc_orders_open_duration_hours > 48
+        for: 0m
+        labels:
+          severity: warning
+          category: business
+        annotations:
+          summary: "Orders open for extended period"
+          description: "{{ $value }} orders have been open for more than 48 hours"
+
+      # Aztec Network Alerts
+      - alert: AztecNodeUnreachable
+        expr: up{job="aztec-node"} == 0
+        for: 2m
+        labels:
+          severity: critical
+          category: blockchain
+        annotations:
+          summary: "Aztec node is unreachable"
+          description: "Cannot connect to Aztec node for more than 2 minutes"
+
+      - alert: PXEUnreachable
+        expr: up{job="aztec-pxe"} == 0
+        for: 2m
+        labels:
+          severity: critical
+          category: blockchain
+        annotations:
+          summary: "Aztec PXE is unreachable"
+          description: "Cannot connect to Aztec PXE for more than 2 minutes"
+
+      # Security Alerts
+      - alert: UnauthorizedAPIAccess
+        expr: rate(http_requests_total{status="401"}[5m]) > 1
+        for: 1m
+        labels:
+          severity: warning
+          category: security
+        annotations:
+          summary: "High rate of unauthorized API access attempts"
+          description: "{{ $value }} unauthorized access attempts per second"
+
+      - alert: SuspiciousOrderActivity
+        expr: rate(otc_orders_created_total[1m]) > 10
+        for: 1m
+        labels:
+          severity: warning
+          category: security
+        annotations:
+          summary: "Unusually high order creation rate"
+          description: "{{ $value }} orders created per second, potential spam or attack"
+
+      # System Resource Alerts
+      - alert: HighMemoryUsage
+        expr: (1 - (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)) > 0.9
+        for: 2m
+        labels:
+          severity: warning
+          category: system
+        annotations:
+          summary: "High memory usage"
+          description: "Memory usage is {{ $value | humanizePercentage }}"
+
+      - alert: HighDiskUsage
+        expr: (1 - (node_filesystem_avail_bytes / node_filesystem_size_bytes)) > 0.85
+        for: 2m
+        labels:
+          severity: warning
+          category: system
+        annotations:
+          summary: "High disk usage"
+          description: "Disk usage is {{ $value | humanizePercentage }} on {{ $labels.device }}"
+
+      # Redis Alerts
+      - alert: RedisHighMemoryUsage
+        expr: redis_memory_used_bytes / redis_memory_max_bytes > 0.9
+        for: 2m
+        labels:
+          severity: warning
+          category: cache
+        annotations:
+          summary: "Redis memory usage is high"
+          description: "Redis memory usage is {{ $value | humanizePercentage }}"
+
+      - alert: RedisSlowQueries
+        expr: redis_slowlog_length > 10
+        for: 1m
+        labels:
+          severity: warning
+          category: cache
+        annotations:
+          summary: "Redis has slow queries"
+          description: "Redis slowlog has {{ $value }} entries"

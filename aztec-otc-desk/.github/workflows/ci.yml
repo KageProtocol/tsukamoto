@@ -1,0 +1,382 @@
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+
+env:
+  NODE_VERSION: '20'
+  BUN_VERSION: '1.0.0'
+
+jobs:
+  # Environment validation and setup
+  validate-environment:
+    name: Validate Environment
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Validate environment configuration
+        run: |
+          # Create minimal .env for validation
+          cp .env.example .env
+          node scripts/validate-env.js
+        env:
+          NODE_ENV: test
+          DATABASE_URL: postgresql://test:test@localhost:5432/test
+          API_HMAC_SECRET: test_hmac_secret_32_characters_minimum
+          L2_NODE_URL: http://localhost:8080
+
+  # Lint and code quality checks
+  lint-and-format:
+    name: Lint and Format Check
+    runs-on: ubuntu-latest
+    needs: validate-environment
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run ESLint
+        run: npm run lint
+        continue-on-error: false
+
+      - name: Check TypeScript types
+        run: npm run typecheck
+        continue-on-error: false
+
+      - name: Check code formatting
+        run: npm run format:check
+        continue-on-error: false
+
+  # Security scanning
+  security-scan:
+    name: Security Scan
+    runs-on: ubuntu-latest
+    needs: validate-environment
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run npm audit
+        run: npm audit --audit-level moderate
+        continue-on-error: false
+
+      - name: Run security scan (if snyk is configured)
+        run: |
+          if command -v snyk &> /dev/null; then
+            snyk test
+          else
+            echo "Snyk not configured, skipping security scan"
+          fi
+        continue-on-error: true
+
+  # Noir contract compilation and testing
+  contracts-test:
+    name: Smart Contracts
+    runs-on: ubuntu-latest
+    needs: validate-environment
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Aztec CLI
+        run: |
+          curl -L https://aztec.network/install | bash
+          echo "$HOME/.aztec/bin" >> $GITHUB_PATH
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v1
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+
+      - name: Install contract dependencies
+        working-directory: packages/contracts
+        run: bun install
+
+      - name: Compile Noir contracts
+        working-directory: packages/contracts
+        run: bun run compile
+
+      - name: Run contract tests
+        working-directory: packages/contracts
+        run: bun run test:nr
+        env:
+          LOG_LEVEL: error
+
+      - name: Generate TypeScript bindings
+        working-directory: packages/contracts
+        run: bun run codegen
+
+  # Backend API testing
+  api-test:
+    name: API Tests
+    runs-on: ubuntu-latest
+    needs: [validate-environment, contracts-test]
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_PASSWORD: test_password
+          POSTGRES_USER: test_user
+          POSTGRES_DB: test_db
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+
+      redis:
+        image: redis:7
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 6379:6379
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v1
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+
+      - name: Install API dependencies
+        working-directory: packages/orderflow
+        run: bun install
+
+      - name: Run API tests
+        working-directory: packages/orderflow
+        run: bun test
+        env:
+          NODE_ENV: test
+          DATABASE_URL: postgresql://test_user:test_password@localhost:5432/test_db
+          REDIS_URL: redis://localhost:6379
+          API_HMAC_SECRET: test_hmac_secret_32_characters_minimum
+
+  # Frontend testing
+  frontend-test:
+    name: Frontend Tests
+    runs-on: ubuntu-latest
+    needs: validate-environment
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+
+      - name: Install frontend dependencies
+        working-directory: apps/web
+        run: npm ci
+
+      - name: Run frontend tests
+        working-directory: apps/web
+        run: npm test
+        env:
+          NODE_ENV: test
+
+      - name: Build frontend
+        working-directory: apps/web
+        run: npm run build
+        env:
+          NODE_ENV: production
+          NEXT_PUBLIC_OTC_API_URL: http://localhost:3001
+
+  # End-to-End testing
+  e2e-test:
+    name: E2E Tests
+    runs-on: ubuntu-latest
+    needs: [contracts-test, api-test, frontend-test]
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Setup Playwright
+        run: npx playwright install --with-deps
+
+      - name: Start test environment
+        run: |
+          # Start minimal test services
+          docker-compose -f docker-compose.test.yml up -d
+          sleep 30 # Wait for services to be ready
+
+      - name: Run E2E tests
+        run: npm run test:e2e
+        env:
+          NODE_ENV: test
+          PLAYWRIGHT_BASE_URL: http://localhost:5173
+
+      - name: Stop test environment
+        if: always()
+        run: docker-compose -f docker-compose.test.yml down
+
+      - name: Upload test results
+        uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: e2e-test-results
+          path: test-results/
+
+  # Docker build and push
+  docker-build:
+    name: Docker Build
+    runs-on: ubuntu-latest
+    needs: [lint-and-format, security-scan, contracts-test, api-test, frontend-test]
+    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop')
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository }}
+          tags: |
+            type=ref,event=branch
+            type=ref,event=pr
+            type=sha,prefix={{branch}}-
+
+      - name: Build and push orderflow image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: packages/orderflow/Dockerfile
+          push: true
+          tags: ghcr.io/${{ github.repository }}/orderflow:${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Build and push web image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: apps/web/Dockerfile
+          push: true
+          tags: ghcr.io/${{ github.repository }}/web:${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  # Load testing
+  load-test:
+    name: Load Testing
+    runs-on: ubuntu-latest
+    needs: [docker-build]
+    if: github.ref == 'refs/heads/main'
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install k6
+        run: |
+          sudo apt-key adv --keyserver hkp://keyserver.ubuntu.com:80 --recv-keys C5AD17C747E3415A3642D57D77C6C491D6AC1D69
+          echo "deb https://dl.k6.io/deb stable main" | sudo tee /etc/apt/sources.list.d/k6.list
+          sudo apt-get update
+          sudo apt-get install k6
+
+      - name: Start services for load testing
+        run: |
+          docker-compose -f docker-compose.test.yml up -d
+          sleep 60 # Extended wait for full startup
+
+      - name: Run load tests
+        run: k6 run scripts/load-test.js
+        env:
+          API_BASE_URL: http://localhost:3001
+
+      - name: Stop test services
+        if: always()
+        run: docker-compose -f docker-compose.test.yml down
+
+  # Deployment (only on main branch)
+  deploy:
+    name: Deploy to Production
+    runs-on: ubuntu-latest
+    needs: [e2e-test, load-test]
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    environment: production
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Deploy to production
+        run: |
+          echo "Deploying to production..."
+          # Add your deployment steps here
+          # This could include:
+          # - Updating Kubernetes manifests
+          # - Rolling deployment
+          # - Health checks
+          # - Rollback on failure
+
+      - name: Notify deployment success
+        if: success()
+        run: |
+          echo "Deployment successful!"
+          # Add notification logic (Slack, Discord, etc.)
+
+      - name: Notify deployment failure
+        if: failure()
+        run: |
+          echo "Deployment failed!"
+          # Add failure notification logic
