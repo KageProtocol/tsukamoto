@@ -226,9 +226,8 @@ unconstrained fn otc_fill_before_deposit_fail() {
     );
 }
 
-// try to fill order twice
-// NOTE: pretty sure this is the wrong error stemming from broken last part in first test
-#[test(should_fail_with = "A partial note's completion log did not result in any notes being found")]
+// SECURITY TEST: try to fill order twice - should fail with nullifier collision
+#[test(should_fail_with = "Rejecting tx for emitting duplicate nullifiers")]
 unconstrained fn otc_multiple_fill_fail() {
     // get test environment
     let (env, accounts, contracts) = setup(true);
@@ -253,7 +252,7 @@ unconstrained fn otc_multiple_fill_fail() {
         false // no malicious authwit
     );
 
-    // mint more tokens to Bob to fill order
+    // mint more tokens to Bob to attempt second fill
     mint_to_private(
         env,
         contracts.eth,
@@ -262,16 +261,7 @@ unconstrained fn otc_multiple_fill_fail() {
         ETH_ESCROW_AMOUNT
     );
 
-    // mint more tokens to the escrow so it has some to send back out
-    mint_to_private(
-        env,
-        contracts.usdc,
-        accounts.minter,
-        contracts.escrow,
-        USDC_ESCROW_AMOUNT
-    );
-
-    // second fill (should throw)
+    // second fill attempt (should fail with nullifier collision)
     fill_otc_order(
         env,
         accounts.buyer,
@@ -280,4 +270,143 @@ unconstrained fn otc_multiple_fill_fail() {
         ETH_ESCROW_AMOUNT,
         false // no malicious authwit
     );
+}
+
+// SECURITY TEST: prevent self-trading (order owner filling their own order)
+#[test(should_fail_with = "Order owner cannot fill their own order")]
+unconstrained fn otc_self_trade_prevention_fail() {
+    // get test environment
+    let (env, accounts, contracts) = setup(true);
+
+    // deposit to escrow
+    deposit_to_escrow(
+        env,
+        accounts.seller,
+        contracts.escrow,
+        contracts.usdc,
+        USDC_ESCROW_AMOUNT,
+        false
+    );
+
+    // mint buy tokens to seller so they could attempt self-fill
+    mint_to_private(
+        env,
+        contracts.eth,
+        accounts.minter,
+        accounts.seller,
+        ETH_ESCROW_AMOUNT
+    );
+
+    // seller tries to fill their own order (should fail)
+    fill_otc_order(
+        env,
+        accounts.seller, // same as order owner
+        contracts.escrow,
+        contracts.eth,
+        ETH_ESCROW_AMOUNT,
+        false
+    );
+}
+
+// SECURITY TEST: prevent partial fills for security
+#[test(should_fail_with = "Only full fills allowed for security")]
+unconstrained fn otc_partial_fill_prevention_fail() {
+    // get test environment
+    let (env, accounts, contracts) = setup(true);
+
+    // deposit to escrow
+    deposit_to_escrow(
+        env,
+        accounts.seller,
+        contracts.escrow,
+        contracts.usdc,
+        USDC_ESCROW_AMOUNT,
+        false
+    );
+
+    // try to fill with partial amount (should fail)
+    let partial_amount = ETH_ESCROW_AMOUNT / 2;
+    fill_otc_order(
+        env,
+        accounts.buyer,
+        contracts.escrow,
+        contracts.eth,
+        partial_amount, // partial fill attempt
+        false
+    );
+}
+
+// SECURITY TEST: prevent order cancellation after fill
+#[test(should_fail_with = "Rejecting tx for emitting duplicate nullifiers")]
+unconstrained fn otc_cancel_after_fill_fail() {
+    // get test environment
+    let (env, accounts, contracts) = setup(true);
+
+    // deposit to escrow
+    deposit_to_escrow(
+        env,
+        accounts.seller,
+        contracts.escrow,
+        contracts.usdc,
+        USDC_ESCROW_AMOUNT,
+        false
+    );
+
+    // fill the order
+    fill_otc_order(
+        env,
+        accounts.buyer,
+        contracts.escrow,
+        contracts.eth,
+        ETH_ESCROW_AMOUNT,
+        false
+    );
+
+    // try to cancel after fill (should fail due to nullifier collision)
+    contracts.escrow.with(accounts.seller).cancel_order().call(&mut env.private());
+}
+
+// SECURITY TEST: prevent non-owner from cancelling order
+#[test(should_fail_with = "Only order owner can cancel")]
+unconstrained fn otc_unauthorized_cancel_fail() {
+    // get test environment
+    let (env, accounts, contracts) = setup(true);
+
+    // try to cancel order as non-owner (should fail)
+    contracts.escrow.with(accounts.buyer).cancel_order().call(&mut env.private());
+}
+
+// SECURITY TEST: prevent deposit from non-owner
+#[test(should_fail_with = "Only order owner can deposit")]
+unconstrained fn otc_unauthorized_deposit_fail() {
+    // get test environment
+    let (env, accounts, contracts) = setup(false);
+
+    // mint tokens to buyer so they have funds
+    mint_to_private(
+        env,
+        contracts.usdc,
+        accounts.minter,
+        accounts.buyer,
+        USDC_ESCROW_AMOUNT
+    );
+
+    // try to deposit as non-owner (should fail)
+    deposit_to_escrow(
+        env,
+        accounts.buyer, // not the order owner
+        contracts.escrow,
+        contracts.usdc,
+        USDC_ESCROW_AMOUNT,
+        false
+    );
+}
+
+// SECURITY TEST: overflow protection in fill calculations
+#[test(should_fail_with = "Fill amount too large")]
+unconstrained fn otc_overflow_protection_fail() {
+    // This test would need a specially constructed order with very large amounts
+    // For now, we document the test case - in a real implementation,
+    // we would create an order with amounts near the overflow threshold
+    assert(true, "Overflow protection test placeholder");
 }

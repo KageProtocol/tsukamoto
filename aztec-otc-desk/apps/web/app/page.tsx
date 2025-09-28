@@ -59,7 +59,8 @@ export default function Home() {
     buyToken: "",
     buyAmount: "",
     expiry: 24,
-    slippageBps: 50
+    slippageBps: 50,
+    minFill: ""
   });
   const [orderErrors, setOrderErrors] = useState<Record<string, string>>({});
   const [creatingOrder, setCreatingOrder] = useState(false);
@@ -532,28 +533,64 @@ export default function Home() {
 
     setCreatingOrder(true);
     try {
+      const payload = {
+        sellTokenAddress: orderParams.sellToken,
+        sellTokenAmount: orderParams.sellAmount,
+        buyTokenAddress: orderParams.buyToken,
+        buyTokenAmount: orderParams.buyAmount,
+        expiryHours: orderParams.expiry,
+        slippageBps: orderParams.slippageBps,
+        // Include minFillAmount if specified
+        ...(orderParams.minFill && { minFillAmount: orderParams.minFill })
+      };
+
       const res = await fetch("/api/order/create", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          sellTokenAddress: orderParams.sellToken,
-          sellTokenAmount: orderParams.sellAmount,
-          buyTokenAddress: orderParams.buyToken,
-          buyTokenAmount: orderParams.buyAmount,
-          expiryHours: orderParams.expiry,
-          slippageBps: orderParams.slippageBps,
-        }),
+        body: JSON.stringify(payload),
       });
 
       const json = await res.json();
-      if (!json.success) throw new Error(json.error || "Create failed");
 
-      toast.success("Order created successfully!");
+      // Handle standardized error responses
+      if (!json.success) {
+        // Display user-friendly error message based on error code
+        let errorMessage = json.userMessage || json.error || "Order creation failed";
+
+        switch (json.code) {
+          case "INSUFFICIENT_BALANCE":
+            errorMessage = "Insufficient balance. Please mint tokens and try again.";
+            break;
+          case "INVALID_TOKEN":
+            errorMessage = "Invalid token selected. Please choose a different token.";
+            break;
+          case "VALIDATION_ERROR":
+            errorMessage = "Please check your order parameters and try again.";
+            if (Array.isArray(json.details)) {
+              errorMessage = json.details[0]; // Show first validation error
+            }
+            break;
+          case "NETWORK_ERROR":
+            errorMessage = "Network issue. Please check your connection and retry.";
+            break;
+          case "DUPLICATE_ORDER":
+            errorMessage = "Similar order already exists. Check your order history.";
+            break;
+        }
+
+        toast.error(errorMessage);
+        console.error("Order creation failed:", json);
+        return;
+      }
+
+      // Success handling
+      const orderId = json.orderId || `order_${Date.now()}`;
+      toast.success(`Order created successfully! ID: ${orderId.slice(0, 8)}...`);
 
       // Log transaction to history
       transactionStorage.addTransaction({
         type: "order_created",
-        orderId: json.orderId || `order_${Date.now()}`,
+        orderId,
         sellTokenAddress: orderParams.sellToken,
         sellTokenAmount: orderParams.sellAmount,
         buyTokenAddress: orderParams.buyToken,
@@ -570,16 +607,24 @@ export default function Home() {
         buyToken: "",
         buyAmount: "",
         expiry: 24,
-        slippageBps: 50
+        slippageBps: 50,
+        minFill: ""
       });
       setSellUsd(null);
       setBuyUsd(null);
       setOrderErrors({});
 
-      // Refresh orders
+      // Refresh orders list
       await fetchOrders();
+
     } catch (e) {
-      toast.error((e as Error).message);
+      // Handle network/parsing errors
+      const errorMessage = (e as Error).message;
+      toast.error(errorMessage.includes("fetch")
+        ? "Connection failed. Please check your network."
+        : "An unexpected error occurred. Please try again."
+      );
+      console.error("Order creation error:", e);
     } finally {
       setCreatingOrder(false);
     }
@@ -809,7 +854,8 @@ export default function Home() {
                   buyToken: "",
                   buyAmount: "",
                   expiry: 24,
-                  slippageBps: 50
+                  slippageBps: 50,
+                  minFill: ""
                 });
                 setSellUsd(null);
                 setBuyUsd(null);

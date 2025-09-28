@@ -94,4 +94,28 @@ impl DefinitionNote {
         ];
         Poseidon2::hash(order_data, order_data.len())
     }
+
+    pub fn get_fill_nullifier(self, caller: AztecAddress, fill_amount: u128, timestamp: u64) -> Field {
+        // Create a unique nullifier for each fill attempt to prevent reentrancy
+        let fill_data = [
+            self.get_order_hash(),
+            caller.to_field(),
+            fill_amount as Field,
+            timestamp as Field,
+            self.randomness // Include randomness for additional uniqueness
+        ];
+        Poseidon2::hash(fill_data, fill_data.len())
+    }
+
+    pub fn get_cancel_nullifier(self, caller: AztecAddress, timestamp: u64) -> Field {
+        // Create a unique nullifier for cancellation attempts to prevent reentrancy
+        let cancel_data = [
+            self.get_order_hash(),
+            caller.to_field(),
+            timestamp as Field,
+            0x43414e43454c, // "CANCEL" in hex for unique domain separation
+            self.randomness
+        ];
+        Poseidon2::hash(cancel_data, cancel_data.len())
+    }
 }

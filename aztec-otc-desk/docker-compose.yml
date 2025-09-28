@@ -1,0 +1,243 @@
+version: '3.8'
+
+services:
+  # Aztec Sandbox (L1 + L2)
+  aztec-sandbox:
+    image: aztecprotocol/aztec:1.2.1
+    container_name: aztec-sandbox
+    ports:
+      - "8080:8080"  # L2 node
+      - "8545:8545"  # L1 anvil
+    environment:
+      - HOME=/tmp
+      - ARCHIVER_POLLING_INTERVAL_MS=500
+      - ARCHIVER_VIEM_POLLING_INTERVAL_MS=500
+      - DEPLOY_AZTEC_CONTRACTS_SALT=1427
+      - FORCE_COLOR=1
+      - L1_CHAIN_ID=31337
+      - LOG_LEVEL=info
+      - P2P_BLOCK_CHECK_INTERVAL_MS=500
+      - SEQ_TX_POLLING_INTERVAL_MS=500
+      - TEST_ACCOUNTS=true
+      - WS_BLOCK_CHECK_INTERVAL_MS=500
+    command: >
+      bash -c "
+        anvil --version &&
+        anvil --host 0.0.0.0 --silent &
+        node --no-warnings /usr/src/yarn-project/aztec/dest/bin/index.js start \"$$@\"
+      " bash --sandbox
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/status"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 120s
+    networks:
+      - aztec-network
+
+  # Aztec PXE (Private Execution Environment)
+  aztec-pxe:
+    image: aztecprotocol/aztec:1.2.1
+    container_name: aztec-pxe
+    ports:
+      - "8081:8081"  # PXE port
+      - "40401:40401"  # P2P port
+      - "40401:40401/udp"  # P2P UDP
+    environment:
+      - HOME=/tmp
+      - FORCE_COLOR=1
+      - LOG_LEVEL=info
+      - P2P_PORT=40401
+    command: >
+      node --no-warnings /usr/src/yarn-project/aztec/dest/bin/index.js start
+      --pxe
+      --pxe.nodeUrl http://aztec-sandbox:8080
+      --pxe.proverEnabled false
+      --port 8081
+      --p2p.p2pPort 40401
+    depends_on:
+      aztec-sandbox:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8081/status"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+    networks:
+      - aztec-network
+
+  # Database (PostgreSQL)
+  postgres:
+    image: postgres:15-alpine
+    container_name: otc-postgres
+    ports:
+      - "5432:5432"
+    environment:
+      - POSTGRES_DB=otc_desk
+      - POSTGRES_USER=otc_user
+      - POSTGRES_PASSWORD=otc_password
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./docker/postgres/init.sql:/docker-entrypoint-initdb.d/init.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U otc_user -d otc_desk"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - aztec-network
+
+  # Redis (for caching and pub/sub)
+  redis:
+    image: redis:7-alpine
+    container_name: otc-redis
+    ports:
+      - "6379:6379"
+    command: redis-server --appendonly yes
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - aztec-network
+
+  # Orderflow Service (Backend API)
+  orderflow:
+    build:
+      context: ./packages/orderflow
+      dockerfile: Dockerfile
+    container_name: otc-orderflow
+    ports:
+      - "3001:3001"
+    environment:
+      - NODE_ENV=development
+      - PORT=3001
+      - DATABASE_URL=postgresql://otc_user:otc_password@postgres:5432/otc_desk
+      - REDIS_URL=redis://redis:6379
+      - API_HMAC_SECRET=dev_hmac_secret_key_change_in_production
+      - L2_NODE_URL=http://aztec-sandbox:8080
+      - CORS_ORIGINS=http://localhost:5173,http://localhost:3000
+      - LOG_LEVEL=debug
+    volumes:
+      - ./packages/orderflow:/app
+      - /app/node_modules
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      aztec-pxe:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3001/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+    networks:
+      - aztec-network
+    restart: unless-stopped
+
+  # Web Application (Frontend)
+  web:
+    build:
+      context: ./apps/web
+      dockerfile: Dockerfile.dev
+    container_name: otc-web
+    ports:
+      - "5173:5173"
+    environment:
+      - NODE_ENV=development
+      - NEXT_PUBLIC_OTC_API_URL=http://localhost:3001
+      - OTC_HMAC_SECRET=dev_hmac_secret_key_change_in_production
+      - L2_NODE_URL=http://aztec-pxe:8081
+      - NEXT_PUBLIC_ETH_ADDRESS=0x0e480358d5764487114eb224935edd6a1c9ac543ec8e56a221887d2d0ff332f9
+      - NEXT_PUBLIC_USDC_ADDRESS=0x127693bf58ba150b04732d0f9cfeb085b3effb37ade0221643108ff4e990f838
+      - FDAI_API_KEY=demo_key_for_price_feeds
+    volumes:
+      - ./apps/web:/app
+      - /app/node_modules
+      - /app/.next
+    depends_on:
+      orderflow:
+        condition: service_healthy
+    networks:
+      - aztec-network
+    restart: unless-stopped
+
+  # Prometheus (Monitoring)
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: otc-prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./docker/prometheus:/etc/prometheus
+      - prometheus_data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/etc/prometheus/console_libraries'
+      - '--web.console.templates=/etc/prometheus/consoles'
+      - '--storage.tsdb.retention.time=200h'
+      - '--web.enable-lifecycle'
+    networks:
+      - aztec-network
+    restart: unless-stopped
+
+  # Grafana (Visualization)
+  grafana:
+    image: grafana/grafana:latest
+    container_name: otc-grafana
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=admin_change_in_production
+      - GF_USERS_ALLOW_SIGN_UP=false
+      - GF_INSTALL_PLUGINS=grafana-clock-panel,grafana-simple-json-datasource
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./docker/grafana/provisioning:/etc/grafana/provisioning
+      - ./docker/grafana/dashboards:/var/lib/grafana/dashboards
+    depends_on:
+      - prometheus
+    networks:
+      - aztec-network
+    restart: unless-stopped
+
+  # Price Feed Service (Mock for development)
+  price-feed:
+    build:
+      context: ./docker/price-feed
+      dockerfile: Dockerfile
+    container_name: otc-price-feed
+    ports:
+      - "3002:3002"
+    environment:
+      - NODE_ENV=development
+      - PORT=3002
+      - REDIS_URL=redis://redis:6379
+    depends_on:
+      redis:
+        condition: service_healthy
+    networks:
+      - aztec-network
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+    driver: local
+  redis_data:
+    driver: local
+  prometheus_data:
+    driver: local
+  grafana_data:
+    driver: local
+
+networks:
+  aztec-network:
+    driver: bridge
