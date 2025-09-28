@@ -1,0 +1,36 @@
+(node:86935) ExperimentalWarning: CommonJS module /Users/lucidsamuel/.nvm/versions/node/v23.3.0/lib/node_modules/npm/node_modules/debug/src/node.js is loading ES Module /Users/lucidsamuel/.nvm/versions/node/v23.3.0/lib/node_modules/npm/node_modules/supports-color/index.js using require().
+Support for loading ES Module in require() is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+npm error could not determine executable to run
+npm error A complete log of this run can be npm warn deprecated inflight@1.0.6: This module is not supported, and leaks memory. Do not use it. Check out lru-cache if you want a good and tested way to coalesce async requests by a key value, which is much more comprehensive and powerful.
+npm warn deprecated glob@7.2.3: Glob versions prior to v9 are no longer supported
+npm warn deprecated glob@7.2.3: Glob versions prior to v9 are no longer supported
+npm warn deprecated glob@7.2.3: Glob versions prior to v9 are no longer supported
+npm warn deprecated glob@7.2.3: Glob versions prior to v9 are no longer supported
+npm warn deprecated level-concat-iterator@3.1.0: Superseded by abstract-level (https://github.com/Level/community#faq)
+npm warn deprecated lodash.isequal@4.5.0: This package is deprecated. Use require('node:util').isDeepStrictEqual instead.
+npm warn deprecated lodash.pick@4.4.0: This package is deprecated. Use destructuring assignment syntax instead.
+npm warn deprecated abstract-leveldown@7.2.0: Superseded by abstract-level (https://github.com/Level/community#faq)
+npm warn deprecated lodash.omit@4.5.0: This package is deprecated. Use destructuring assignment syntax instead.
+npm warn deprecated koa-router@12.0.1: Please use @koa/router instead, starting from v9! 
+npm warn deprecated @libp2p/mplex@10.0.16: Mplex has no flow control - please use @chainsafe/libp2p-yamux instead
+npm warn deprecated @types/chalk@2.2.4: This is a stub types definition. chalk provides its own type definitions, so you do not need this installed.
+npm warn deprecated leveldown@6.1.1: Superseded by classic-level (https://github.com/Level/community#faq)
+node:internal/modules/esm/resolve:275
+    throw new ERR_MODULE_NOT_FOUND(
+          ^
+
+Error [ERR_MODULE_NOT_FOUND]: Cannot find module '/Users/lucidsamuel/.npm/_npx/ad7b8ea3e3e7e224/node_modules/@aztec/cli/public_include_metric_prefixes.json' imported from /Users/lucidsamuel/.npm/_npx/ad7b8ea3e3e7e224/node_modules/@aztec/cli/dest/config/chain_l2_config.js
+    at finalizeResolution (node:internal/modules/esm/resolve:275:11)
+    at moduleResolve (node:internal/modules/esm/resolve:860:10)
+    at defaultResolve (node:internal/modules/esm/resolve:984:11)
+    at ModuleLoader.defaultResolve (node:internal/modules/esm/loader:654:12)
+    at #cachedDefaultResolve (node:internal/modules/esm/loader:603:25)
+    at ModuleLoader.resolve (node:internal/modules/esm/loader:586:38)
+    at ModuleLoader.getModuleJobForImport (node:internal/modules/esm/loader:242:38)
+    at ModuleJob._link (node:internal/modules/esm/module_job:135:49) {
+  code: 'ERR_MODULE_NOT_FOUND',
+  url: 'file:///Users/lucidsamuel/.npm/_npx/ad7b8ea3e3e7e224/node_modules/@aztec/cli/public_include_metric_prefixes.json'
+}
+
+Node.js v23.3.0

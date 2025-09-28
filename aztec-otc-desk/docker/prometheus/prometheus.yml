@@ -99,9 +99,4 @@ scrape_configs:
   #   metrics_path: /metrics
   #   scrape_interval: 30s
 
-# Storage configuration
-storage:
-  tsdb:
-    retention.time: 7d
-    retention.size: 10GB
-    wal-compression: true
+# Storage configuration handled via command line flags in docker-compose

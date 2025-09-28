@@ -5,7 +5,7 @@ export async function GET(req: Request) {
   try {
     const url = new URL(req.url);
     const search = url.search ? url.search : "";
-    const res = await fetch(`${api}/order${search}`, { cache: "no-store" });
+    const res = await fetch(`${api}/orders${search}`, { cache: "no-store" });
     const data = await res.json();
     return new Response(JSON.stringify(data), {
       status: 200,
