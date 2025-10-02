@@ -34,6 +34,10 @@ const main = async () => {
     const filepath = `${__dirname}/data/deployments.json`;
     writeFileSync(filepath, JSON.stringify(deployments, null, 2));
     console.log(`Deployments written to ${filepath}`);
+
+    console.log("\n🔄 Syncing addresses to configuration files...");
+    console.log("⚠️  Run 'bun run sync:deployments' to update .env files");
+    console.log("   Then restart your Next.js dev server!\n");
 }
 
 main();

@@ -3,6 +3,10 @@ import { spawn } from "child_process";
 import path from "path";
 import crypto from "crypto";
 
+// Increase timeout for order creation (deploying contracts takes time)
+export const maxDuration = 300; // 5 minutes
+export const dynamic = 'force-dynamic';
+
 // Order creation request schema
 type OrderCreateRequest = {
   sellTokenAddress: string;
@@ -186,9 +190,9 @@ export async function POST(req: Request) {
       API_URL:
         process.env.OTC_API_URL ||
         process.env.NEXT_PUBLIC_OTC_API_URL ||
-        "http://localhost:3000",
+        "http://localhost:3001",
       API_HMAC_SECRET:
-        process.env.OTC_HMAC_SECRET || process.env.API_HMAC_SECRET || "",
+        process.env.OTC_HMAC_SECRET || process.env.API_HMAC_SECRET || "development_secret_key_32_chars_min",
     };
 
     // Add validated parameters to environment
@@ -228,7 +232,15 @@ export async function POST(req: Request) {
 
     await new Promise((resolve) => child.on("close", resolve));
     const code = child.exitCode ?? 1;
+
+    console.log('[Order Create] Script exited with code:', code);
+    console.log('[Order Create] Stdout length:', stdout.length);
+    console.log('[Order Create] Stderr length:', stderr.length);
+    console.log('[Order Create] Last 500 chars of stdout:', stdout.slice(-500));
+    console.log('[Order Create] Last 500 chars of stderr:', stderr.slice(-500));
+
     if (errored.err) {
+      console.error('[Order Create] Process error:', errored.err);
       return new Response(
         JSON.stringify(createErrorResponse(
           'EXECUTION_ERROR',

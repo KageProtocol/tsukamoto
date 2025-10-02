@@ -22,7 +22,9 @@
     "setup:accounts": "bun run scripts/setup_accounts.ts",
     "setup:deploy": "bun run scripts/deploy.ts",
     "setup:mint": "bun run scripts/mint.ts",
-    "order:create": "bun run scripts/create_order.ts",
-    "order:fill": "bun run scripts/buy_order.ts"
+    "sync:deployments": "bun run scripts/sync-deployments.ts",
+    "validate": "bun run scripts/validate-config.ts",
+    "order:create": "L2_NODE_URL=http://localhost:8080 API_URL=http://localhost:3001 API_HMAC_SECRET=development_secret_key_32_chars_min bun run scripts/create_order.ts",
+    "order:fill": "L2_NODE_URL=http://localhost:8080 API_URL=http://localhost:3001 API_HMAC_SECRET=development_secret_key_32_chars_min bun run scripts/buy_order.ts"
   }
 }

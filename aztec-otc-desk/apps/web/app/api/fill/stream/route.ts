@@ -1,5 +1,7 @@
 import "server-only";
 export const runtime = "nodejs";
+export const maxDuration = 300; // 5 minutes for fill operations
+export const dynamic = 'force-dynamic';
 import { spawn } from "child_process";
 import path from "path";
 
@@ -20,9 +22,9 @@ export async function GET(req: Request) {
     API_URL:
       process.env.OTC_API_URL ||
       process.env.NEXT_PUBLIC_OTC_API_URL ||
-      "http://localhost:3000",
+      "http://localhost:3001",
     API_HMAC_SECRET:
-      process.env.OTC_HMAC_SECRET || process.env.API_HMAC_SECRET || "",
+      process.env.OTC_HMAC_SECRET || process.env.API_HMAC_SECRET || "development_secret_key_32_chars_min",
   };
 
   const stream = new ReadableStream({

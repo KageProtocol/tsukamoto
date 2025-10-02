@@ -159,30 +159,29 @@ export default function Home() {
     }
 
     if (activeTab === "received") {
-      // Filter orders where the user is acting as a buyer/taker
+      // Only show open/pending orders in available section
       const receivedOrders = orders.filter(o => {
-        // This would typically check if the current user is the intended recipient
-        // For now, we'll show all orders as "receivable"
-        return true;
+        const status = o.status?.toLowerCase();
+        return !status || status === 'open' || status === 'pending';
       });
 
       return (
         <div className="section">
-          <h3 style={{ margin: "0 0 16px 0" }}>Received Orders</h3>
+          <h3 style={{ margin: "0 0 16px 0" }}>Available Orders</h3>
           <p style={{ color: "#9aa3ad", marginBottom: 16 }}>
-            Orders you can fill (buying from other users)
+            Open orders you can fill
           </p>
           {renderOrdersList(receivedOrders, "received")}
         </div>
       );
     }
 
-    // Default: submitted orders (orders you created)
+    // Default: submitted orders (orders you created) - show all
     return (
       <div className="section">
-        <h3 style={{ margin: "0 0 16px 0" }}>Your Submitted Orders</h3>
+        <h3 style={{ margin: "0 0 16px 0" }}>Your Orders</h3>
         <p style={{ color: "#9aa3ad", marginBottom: 16 }}>
-          Orders you created (selling your tokens)
+          Orders you created
         </p>
         {renderOrdersList(orders, "submitted")}
       </div>
@@ -340,8 +339,8 @@ export default function Home() {
                         }
                       }
 
-                      // Determine success based on multiple factors
-                      const isSuccess = hasSuccess && !hasError && (exitCode === 0 || exitCode === null);
+                      // Strict success detection - only succeed if exit code is 0 AND success message
+                      const isSuccess = hasSuccess && !hasError && exitCode === 0;
 
                       if (isSuccess) {
                         await fetchOrders();
@@ -361,11 +360,14 @@ export default function Home() {
                           txHash: lastMessage.match(/0x[a-fA-F0-9]{64}/)?.[0]
                         });
                         loadTransactions();
-                      } else if (hasError || exitCode !== 0) {
-                        setActionMsg(`Fill failed (exit code: ${exitCode || 'unknown'})`);
-                        toast.error("Fill operation failed - order remains open");
                       } else {
-                        setActionMsg("Fill status unclear - check order list");
+                        const errorMsg = lastMessage.includes("Insufficient balance")
+                          ? "Insufficient balance to fill order"
+                          : lastMessage.includes("Error")
+                          ? lastMessage.substring(0, 100)
+                          : `Fill failed (exit code: ${exitCode ?? 'unknown'})`;
+                        setActionMsg(errorMsg);
+                        toast.error("Fill operation failed - order remains open");
                         await fetchOrders(); // Refresh to see current state
                       }
                     } catch (e) {

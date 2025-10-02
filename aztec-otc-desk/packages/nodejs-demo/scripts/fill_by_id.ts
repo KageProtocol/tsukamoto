@@ -92,6 +92,7 @@ async function main() {
     // Only close the order if fill succeeded
     await closeOrder(orderToFill.orderId, API_URL);
     console.log("Closed order", ORDER_ID);
+    process.exit(0);
   } catch (fillError) {
     console.error("Fill operation failed:", fillError);
     throw new Error(`Fill failed: ${fillError.message}`);
