@@ -292,7 +292,6 @@ export default function Home() {
                     let hasSuccess = false;
                     let exitCode = null;
                     let lastMessage = "";
-                    const throttler = new StreamToastThrottler();
 
                     try {
                       const resp = await fetch(
@@ -313,6 +312,11 @@ export default function Home() {
                           const message = line.replace(/^data: /, "");
                           lastMessage = message;
 
+                          // Update action message to show progress (UI feedback)
+                          if (message && !message.startsWith("done:")) {
+                            setActionMsg(message.slice(0, 150));
+                          }
+
                           // Check for completion and exit code
                           if (message.startsWith("done:")) {
                             const code = message.match(/done: (\d+)/)?.[1];
@@ -331,17 +335,8 @@ export default function Home() {
                             hasError = true;
                           }
 
-                          // Show appropriate toast messages with throttling
-                          if (message.includes("[err]") || message.includes("Fill failed:")) {
-                            throttler.showMessage(message.slice(0, 120), "error");
-                          } else if (message.includes("Closed order") || message.includes("completed successfully")) {
-                            throttler.showMessage(message.slice(0, 120), "success");
-                          } else if (message.includes("Insufficient balance")) {
-                            throttler.showMessage(message.slice(0, 120), "error");
-                          } else if (message && !message.startsWith("done:") && !message.includes("CREATE ERROR")) {
-                            // Throttled info messages - only every 5 seconds
-                            throttler.showMessage(message.slice(0, 120), "info");
-                          }
+                          // NO TOASTS DURING STREAMING - only show final result at the end
+                          // This prevents 100s of toast messages from flooding the UI
                         }
                       }
 

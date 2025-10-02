@@ -3,7 +3,7 @@
  * Prevents error toast spam and provides consistent error handling across the app
  */
 
-import { toast } from "../components/ToastStack";
+import { toast } from "../app/components/ToastStack";
 
 // Track recent errors to prevent duplicates
 const recentErrors = new Map<string, number>();
@@ -154,34 +154,47 @@ export async function handleApiResponse<T = any>(
 
 /**
  * Throttle toast messages during streaming operations
- * Only shows important messages (errors, success) and throttles info messages
+ * Prevents toast spam by limiting frequency of all message types
  */
 export class StreamToastThrottler {
   private lastInfoToast = 0;
-  private readonly INFO_THROTTLE_MS = 5000; // Only show info toast every 5 seconds
+  private lastErrorToast = 0;
+  private lastSuccessToast = 0;
+  private readonly INFO_THROTTLE_MS = 10000; // Only show info toast every 10 seconds
+  private readonly ERROR_THROTTLE_MS = 3000; // Only show error toast every 3 seconds
+  private readonly SUCCESS_THROTTLE_MS = 2000; // Only show success toast every 2 seconds
   private messageCount = 0;
+  private errorCount = 0;
+  private successCount = 0;
 
   /**
    * Show a toast message with intelligent throttling
    */
   showMessage(message: string, type: "info" | "error" | "success" = "info") {
     this.messageCount++;
+    const now = Date.now();
 
-    // Always show errors and success immediately
+    // Throttle error messages
     if (type === "error") {
-      if (!isDuplicateError(message)) {
+      this.errorCount++;
+      if (now - this.lastErrorToast >= this.ERROR_THROTTLE_MS && !isDuplicateError(message)) {
         toast.error(message);
+        this.lastErrorToast = now;
       }
       return;
     }
 
+    // Throttle success messages
     if (type === "success") {
-      toast.success(message);
+      this.successCount++;
+      if (now - this.lastSuccessToast >= this.SUCCESS_THROTTLE_MS) {
+        toast.success(message);
+        this.lastSuccessToast = now;
+      }
       return;
     }
 
     // Throttle info messages
-    const now = Date.now();
     if (now - this.lastInfoToast >= this.INFO_THROTTLE_MS) {
       toast.info(message);
       this.lastInfoToast = now;
@@ -193,7 +206,9 @@ export class StreamToastThrottler {
    */
   getStats() {
     return {
-      messageCount: this.messageCount
+      messageCount: this.messageCount,
+      errorCount: this.errorCount,
+      successCount: this.successCount
     };
   }
 
@@ -202,6 +217,10 @@ export class StreamToastThrottler {
    */
   reset() {
     this.lastInfoToast = 0;
+    this.lastErrorToast = 0;
+    this.lastSuccessToast = 0;
     this.messageCount = 0;
+    this.errorCount = 0;
+    this.successCount = 0;
   }
 }
