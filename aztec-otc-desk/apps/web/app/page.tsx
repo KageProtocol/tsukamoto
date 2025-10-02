@@ -11,6 +11,7 @@ import TransactionHistory, { transactionStorage, Transaction } from "./component
 import PortfolioModal from "./components/PortfolioModal";
 import { useConfirmDialog } from "./components/ConfirmDialog";
 import { OrderStatusWithContext } from "./components/OrderStatusBadge";
+import { withErrorHandling, handleApiResponse, StreamToastThrottler } from "../lib/errorHandler";
 
 type Order = {
   orderId: string;
@@ -291,6 +292,7 @@ export default function Home() {
                     let hasSuccess = false;
                     let exitCode = null;
                     let lastMessage = "";
+                    const throttler = new StreamToastThrottler();
 
                     try {
                       const resp = await fetch(
@@ -329,16 +331,16 @@ export default function Home() {
                             hasError = true;
                           }
 
-                          // Show appropriate toast messages
+                          // Show appropriate toast messages with throttling
                           if (message.includes("[err]") || message.includes("Fill failed:")) {
-                            toast.error(message.slice(0, 120));
+                            throttler.showMessage(message.slice(0, 120), "error");
                           } else if (message.includes("Closed order") || message.includes("completed successfully")) {
-                            toast.success(message.slice(0, 120));
+                            throttler.showMessage(message.slice(0, 120), "success");
                           } else if (message.includes("Insufficient balance")) {
-                            toast.error(message.slice(0, 120));
+                            throttler.showMessage(message.slice(0, 120), "error");
                           } else if (message && !message.startsWith("done:") && !message.includes("CREATE ERROR")) {
-                            // Only show non-CREATE ERROR info messages
-                            toast.info(message.slice(0, 120));
+                            // Throttled info messages - only every 5 seconds
+                            throttler.showMessage(message.slice(0, 120), "info");
                           }
                         }
                       }
@@ -394,7 +396,7 @@ export default function Home() {
               <button
                 className="btn btn-sm btn-danger"
                 style={{ marginLeft: 8 }}
-                onClick={async () => {
+                onClick={withErrorHandling(async () => {
                   const confirmed = await confirm({
                     title: "Cancel Order",
                     message: `Are you sure you want to cancel this order?\n\nSelling: ${formatTokenAmount(o.sellTokenAddress, o.sellTokenAmount)}\nFor: ${formatTokenAmount(o.buyTokenAddress, o.buyTokenAmount)}\n\nThis action cannot be undone.`,
@@ -411,26 +413,24 @@ export default function Home() {
                     headers: { "content-type": "application/json" },
                     body: JSON.stringify({ orderId: o.orderId }),
                   });
-                  const json = await res.json();
-                  if (!json.success) {
-                    toast.error(json.error || "Cancel failed");
-                  } else {
-                    toast.success("Order cancelled");
-                    // Log cancellation to history
-                    transactionStorage.addTransaction({
-                      type: "order_cancelled",
-                      orderId: o.orderId,
-                      sellTokenAddress: o.sellTokenAddress,
-                      sellTokenAmount: o.sellTokenAmount,
-                      buyTokenAddress: o.buyTokenAddress,
-                      buyTokenAmount: o.buyTokenAmount,
-                      status: "completed",
-                      role: "maker"
-                    });
-                    loadTransactions();
-                    setTimeout(fetchOrders, 500);
-                  }
-                }}
+
+                  const json = await handleApiResponse(res, { errorPrefix: "Cancel failed" });
+
+                  toast.success("Order cancelled");
+                  // Log cancellation to history
+                  transactionStorage.addTransaction({
+                    type: "order_cancelled",
+                    orderId: o.orderId,
+                    sellTokenAddress: o.sellTokenAddress,
+                    sellTokenAmount: o.sellTokenAmount,
+                    buyTokenAddress: o.buyTokenAddress,
+                    buyTokenAmount: o.buyTokenAmount,
+                    status: "completed",
+                    role: "maker"
+                  });
+                  loadTransactions();
+                  setTimeout(fetchOrders, 500);
+                }, { errorMessage: "Failed to cancel order", showToast: true })}
               >
                 Cancel
               </button>
@@ -658,19 +658,15 @@ export default function Home() {
         </button>
         <button
           className="btn btn-danger"
-          onClick={async () => {
+          onClick={withErrorHandling(async () => {
             setActionMsg(null);
             const res = await fetch("/api/order/cancel-all", {
               method: "POST",
             });
-            const json = await res.json();
-            if (!json.success) {
-              toast.error(json.error || "Cancel all failed");
-            } else {
-              toast.success(`Cancelled ${json.count ?? "open"} orders`);
-              await fetchOrders();
-            }
-          }}
+            const json = await handleApiResponse(res, { errorPrefix: "Cancel all failed" });
+            toast.success(`Cancelled ${json.count ?? "open"} orders`);
+            await fetchOrders();
+          }, { errorMessage: "Failed to cancel all orders", showToast: true })}
           style={{ marginLeft: "auto" }}
         >
           Cancel All
