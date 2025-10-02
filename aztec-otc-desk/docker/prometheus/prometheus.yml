@@ -28,7 +28,7 @@ scrape_configs:
   # Orderflow Service (Backend API)
   - job_name: 'orderflow-api'
     static_configs:
-      - targets: ['orderflow:3001']
+      - targets: ['host.docker.internal:3001']
     metrics_path: /metrics
     scrape_interval: 15s
     scrape_timeout: 10s
@@ -39,7 +39,7 @@ scrape_configs:
   # Web Application
   - job_name: 'web-app'
     static_configs:
-      - targets: ['web:5173']
+      - targets: ['host.docker.internal:5173']
     metrics_path: /api/metrics
     scrape_interval: 30s
     scrape_timeout: 10s
@@ -63,7 +63,7 @@ scrape_configs:
   # Aztec Node (if metrics are exposed)
   - job_name: 'aztec-node'
     static_configs:
-      - targets: ['aztec-sandbox:8080']
+      - targets: ['host.docker.internal:8080']
     metrics_path: /metrics
     scrape_interval: 30s
     scrape_timeout: 10s
@@ -72,7 +72,7 @@ scrape_configs:
   # Aztec PXE
   - job_name: 'aztec-pxe'
     static_configs:
-      - targets: ['aztec-pxe:8081']
+      - targets: ['host.docker.internal:8081']
     metrics_path: /metrics
     scrape_interval: 30s
     scrape_timeout: 10s

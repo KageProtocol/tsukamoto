@@ -4,18 +4,18 @@
   "type": "module",
   "private": true,
   "devDependencies": {
-      "@types/bun": "catalog:",
-      "@types/jest": "catalog:",
-      "@aztec/aztec.js": "catalog:",
-      "@aztec/accounts": "catalog:",
-      "@aztec/ethereum": "catalog:",
-      "@aztec/stdlib": "catalog:",
-      "@aztec/noir-contracts.js": "catalog:",
+      "@types/bun": "latest",
+      "@types/jest": "^29.5.0",
+      "@aztec/aztec.js": "^1.2.1",
+      "@aztec/accounts": "^1.2.1",
+      "@aztec/ethereum": "^1.2.1",
+      "@aztec/stdlib": "^1.2.1",
+      "@aztec/noir-contracts.js": "^1.2.1",
       "@aztec-otc-desk/contracts": "workspace:*",
-      "dotenv": "catalog:"
+      "dotenv": "^16.3.1"
   },
   "peerDependencies": {
-    "typescript": "catalog:"
+    "typescript": "^5.0.0"
   },
   "scripts": {
     "balances": "bun run scripts/print_balances.ts",
