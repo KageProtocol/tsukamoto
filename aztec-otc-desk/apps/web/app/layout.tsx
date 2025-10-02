@@ -1,5 +1,6 @@
 import "./globals.css";
 import { ToastStack } from "./components/ToastStack";
+import { ErrorBoundary } from "./components/ErrorBoundary";
 
 export const metadata = {
   title: "Tsukamoto OTC",
@@ -14,7 +15,9 @@ export default function RootLayout({
   return (
     <html lang="en" suppressHydrationWarning>
       <body>
-        {children}
+        <ErrorBoundary>
+          {children}
+        </ErrorBoundary>
         <ToastStack />
       </body>
     </html>
