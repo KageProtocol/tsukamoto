@@ -37,12 +37,12 @@ export const getOrders = async (apiUrl: string): Promise<Order[]> => {
   // do this first to fail if no order found
   let orders: Order[];
   try {
-    const path = "/order";
+    const path = "/orders";
     const fullURL =
       `${apiUrl}${path}` +
       `?include_sensitive=true` +
-      `&buy_token_address=${usdcDeployment.address}` +
-      `&sell_token_address=${ethDeployment.address}`;
+      `&buyToken=${usdcDeployment.address}` +
+      `&sellToken=${ethDeployment.address}`;
     const secret = getEnv("API_HMAC_SECRET");
     if (!secret) throw new Error("API_HMAC_SECRET not set in environment");
     const { ts, sig } = sign("GET", path, "", secret);
@@ -118,6 +118,13 @@ export const createOrder = async (
     sellTokenAmount: sellTokenAmount.toString(),
     buyTokenAddress: buyTokenAddress.toString(),
     buyTokenAmount: buyTokenAmount.toString(),
+    orderId: `${Date.now()}_${Math.floor(Math.random() * 1000000)}`,
+    orderNonce: Date.now().toString(),
+    domainSeparator: "AZTEC_OTC_V1",
+    minFillAmount: sellTokenAmount.toString(),
+    maxSlippageBps: 50, // 0.5%
+    expiryTimestamp: Math.floor(Date.now() / 1000) + (24 * 60 * 60), // 24 hours from now
+    createdBy: "cli"
   };
   // post request to add order to api
   try {

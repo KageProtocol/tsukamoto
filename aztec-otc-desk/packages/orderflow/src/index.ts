@@ -1,7 +1,44 @@
 import { serve } from "bun";
 import { register, Counter, Histogram, Gauge } from "prom-client";
+import db from "./db";
 
 const PORT = process.env.PORT || 3001;
+
+// Transform database order to API format (snake_case to camelCase)
+function transformOrderForAPI(order: any, includeSensitive: boolean = false) {
+  const transformed: any = {
+    ...order,
+    orderId: order.order_id,
+    escrowAddress: order.escrow_address,
+    contractInstance: order.contract_instance,
+    sellTokenAddress: order.sell_token_address,
+    sellTokenAmount: order.sell_token_amount,
+    buyTokenAddress: order.buy_token_address,
+    buyTokenAmount: order.buy_token_amount,
+    orderNonce: order.order_nonce,
+    domainSeparator: order.domain_separator,
+    minFillAmount: order.min_fill_amount,
+    maxSlippageBps: order.max_slippage_bps,
+    expiryTimestamp: order.expiry_timestamp,
+    createdBy: order.created_by,
+    workspaceId: order.workspace_id,
+    createdAt: order.created_at,
+    updatedAt: order.updated_at,
+    closedAt: order.closed_at
+  };
+
+  // Only include sensitive fields if explicitly requested
+  if (includeSensitive) {
+    transformed.secretKey = order.secret_key;
+    transformed.partialAddress = order.partial_address;
+  } else {
+    // Remove sensitive fields from response
+    delete transformed.secret_key;
+    delete transformed.partial_address;
+  }
+
+  return transformed;
+}
 
 // Prometheus metrics
 const httpRequestsTotal = new Counter({
@@ -61,24 +98,147 @@ const server = serve({
         return response;
       }
 
+      // Order endpoint (GET - get single order by ID)
+      if (url.pathname === "/order" && method === "GET") {
+        route = "/order";
+
+        try {
+          const orderId = url.searchParams.get('id');
+          if (!orderId) {
+            status = 400;
+            return new Response(JSON.stringify({
+              success: false,
+              message: "Order ID is required"
+            }), {
+              status: 400,
+              headers: { "Content-Type": "application/json" }
+            });
+          }
+
+          // TODO: Validate HMAC signature here before allowing include_sensitive
+          const includeSensitive = url.searchParams.get('include_sensitive') === 'true';
+
+          // Get order from database
+          const order = await db.getOrderById(orderId);
+
+          if (!order) {
+            status = 404;
+            return new Response(JSON.stringify({
+              success: false,
+              message: "Order not found"
+            }), {
+              status: 404,
+              headers: { "Content-Type": "application/json" }
+            });
+          }
+
+          // Transform order to API format
+          const transformedOrder = transformOrderForAPI(order, includeSensitive);
+
+          const response = new Response(JSON.stringify({
+            success: true,
+            message: "Order retrieved successfully",
+            data: [transformedOrder]
+          }), {
+            headers: { "Content-Type": "application/json" }
+          });
+
+          // Record metrics
+          httpRequestsTotal.inc({ method, route, status_code: status });
+          httpRequestDuration.observe({ method, route }, (Date.now() - startTime) / 1000);
+
+          return response;
+        } catch (error) {
+          console.error("Database error:", error);
+          status = 500;
+          const response = new Response(JSON.stringify({
+            success: false,
+            message: "Database error",
+            error: error.message
+          }), {
+            status: 500,
+            headers: { "Content-Type": "application/json" }
+          });
+
+          // Record metrics
+          httpRequestsTotal.inc({ method, route, status_code: status });
+          httpRequestDuration.observe({ method, route }, (Date.now() - startTime) / 1000);
+
+          return response;
+        }
+      }
+
       // Orders endpoint (GET - list orders)
       if (url.pathname === "/orders" && method === "GET") {
         route = "/orders";
-        ordersTotal.set(0); // Update with actual count when implemented
 
-        const response = new Response(JSON.stringify({
-          success: true,
-          message: "Retrieved 0 order(s)",
-          data: []
-        }), {
-          headers: { "Content-Type": "application/json" }
-        });
+        try {
+          // Parse query parameters
+          const searchParams = url.searchParams;
+          const limit = searchParams.get('limit') ? parseInt(searchParams.get('limit')!) : 50;
+          const offset = searchParams.get('offset') ? parseInt(searchParams.get('offset')!) : 0;
+          const status = searchParams.get('status') || undefined;
+          const sellToken = searchParams.get('sellToken') || undefined;
+          const buyToken = searchParams.get('buyToken') || undefined;
 
-        // Record metrics
-        httpRequestsTotal.inc({ method, route, status_code: status });
-        httpRequestDuration.observe({ method, route }, (Date.now() - startTime) / 1000);
+          // TODO: Validate HMAC signature here before allowing include_sensitive
+          const includeSensitive = searchParams.get('include_sensitive') === 'true';
 
-        return response;
+          // Get orders from database
+          const orders = await db.getOrders({
+            status,
+            limit,
+            offset,
+            sellToken,
+            buyToken
+          });
+
+          // Get total count
+          const totalCount = await db.getOrderCount(status);
+
+          // Update metrics
+          ordersTotal.set(totalCount);
+
+          // Transform orders to API format
+          const transformedOrders = orders.map(order => transformOrderForAPI(order, includeSensitive));
+
+          const response = new Response(JSON.stringify({
+            success: true,
+            message: `Retrieved ${orders.length} order(s)`,
+            data: transformedOrders,
+            pagination: {
+              total: totalCount,
+              limit,
+              offset,
+              hasMore: offset + orders.length < totalCount
+            }
+          }), {
+            headers: { "Content-Type": "application/json" }
+          });
+
+          // Record metrics
+          httpRequestsTotal.inc({ method, route, status_code: status });
+          httpRequestDuration.observe({ method, route }, (Date.now() - startTime) / 1000);
+
+          return response;
+        } catch (error) {
+          console.error("Database error:", error);
+          status = 500;
+          const response = new Response(JSON.stringify({
+            success: false,
+            message: "Database error",
+            error: error.message
+          }), {
+            status: 500,
+            headers: { "Content-Type": "application/json" }
+          });
+
+          // Record metrics
+          httpRequestsTotal.inc({ method, route, status_code: status });
+          httpRequestDuration.observe({ method, route }, (Date.now() - startTime) / 1000);
+
+          return response;
+        }
       }
 
       // Order endpoint (POST - create order)
@@ -90,20 +250,40 @@ const server = serve({
           const orderData = JSON.parse(body);
 
           // TODO: Validate HMAC signature here
-          // TODO: Store order in database
 
-          console.log("Order creation request received:", {
-            escrowAddress: orderData.escrowAddress,
-            sellTokenAddress: orderData.sellTokenAddress,
-            buyTokenAddress: orderData.buyTokenAddress,
-            sellTokenAmount: orderData.sellTokenAmount,
-            buyTokenAmount: orderData.buyTokenAmount
+          // Create order in database
+          const order = await db.createOrder({
+            order_id: orderData.orderId || `${Date.now()}_${Math.floor(Math.random() * 1000000)}`,
+            escrow_address: orderData.escrowAddress,
+            contract_instance: orderData.contractInstance || JSON.stringify({}),
+            secret_key: orderData.secretKey,
+            partial_address: orderData.partialAddress,
+            sell_token_address: orderData.sellTokenAddress,
+            sell_token_amount: orderData.sellTokenAmount,
+            buy_token_address: orderData.buyTokenAddress,
+            buy_token_amount: orderData.buyTokenAmount,
+            order_nonce: orderData.orderNonce,
+            domain_separator: orderData.domainSeparator,
+            min_fill_amount: orderData.minFillAmount,
+            max_slippage_bps: orderData.maxSlippageBps,
+            expiry_timestamp: orderData.expiryTimestamp,
+            status: 'open',
+            created_by: orderData.createdBy || 'cli',
+            workspace_id: orderData.workspaceId
+          });
+
+          console.log("✅ Order created in database:", {
+            orderId: order.order_id,
+            escrowAddress: order.escrow_address,
+            sellToken: order.sell_token_address,
+            buyToken: order.buy_token_address
           });
 
           const response = new Response(JSON.stringify({
             success: true,
             message: "Order created successfully",
-            orderId: `order_${Date.now()}`
+            orderId: order.order_id,
+            data: order
           }), {
             headers: { "Content-Type": "application/json" }
           });
@@ -114,13 +294,85 @@ const server = serve({
 
           return response;
         } catch (error) {
+          console.error("Order creation error:", error);
           status = 400;
           const response = new Response(JSON.stringify({
             success: false,
-            message: "Invalid order data",
+            message: "Invalid order data or database error",
             error: error.message
           }), {
             status: 400,
+            headers: { "Content-Type": "application/json" }
+          });
+
+          // Record metrics
+          httpRequestsTotal.inc({ method, route, status_code: status });
+          httpRequestDuration.observe({ method, route }, (Date.now() - startTime) / 1000);
+
+          return response;
+        }
+      }
+
+      // Order endpoint (DELETE - close/cancel order)
+      if (url.pathname === "/order" && method === "DELETE") {
+        route = "/order";
+
+        try {
+          const orderId = url.searchParams.get('id');
+          if (!orderId) {
+            status = 400;
+            return new Response(JSON.stringify({
+              success: false,
+              message: "Order ID is required"
+            }), {
+              status: 400,
+              headers: { "Content-Type": "application/json" }
+            });
+          }
+
+          // TODO: Validate HMAC signature here
+
+          // Update order status to filled
+          const updatedOrder = await db.updateOrderStatus(orderId, 'filled', 'cli');
+
+          if (!updatedOrder) {
+            status = 404;
+            return new Response(JSON.stringify({
+              success: false,
+              message: "Order not found"
+            }), {
+              status: 404,
+              headers: { "Content-Type": "application/json" }
+            });
+          }
+
+          console.log("✅ Order closed:", {
+            orderId: updatedOrder.order_id,
+            status: updatedOrder.status
+          });
+
+          const response = new Response(JSON.stringify({
+            success: true,
+            message: "Order closed successfully",
+            data: transformOrderForAPI(updatedOrder)
+          }), {
+            headers: { "Content-Type": "application/json" }
+          });
+
+          // Record metrics
+          httpRequestsTotal.inc({ method, route, status_code: status });
+          httpRequestDuration.observe({ method, route }, (Date.now() - startTime) / 1000);
+
+          return response;
+        } catch (error) {
+          console.error("Order close error:", error);
+          status = 500;
+          const response = new Response(JSON.stringify({
+            success: false,
+            message: "Error closing order",
+            error: error.message
+          }), {
+            status: 500,
             headers: { "Content-Type": "application/json" }
           });
 
