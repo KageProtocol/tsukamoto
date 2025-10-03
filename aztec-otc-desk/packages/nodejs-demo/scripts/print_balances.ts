@@ -46,11 +46,13 @@ const main = async () => {
     await eth
         .withWallet(buyer)
         .methods
-        .sync_private_state();
+        .sync_private_state()
+        .simulate();
     await usdc
         .withWallet(buyer)
         .methods
-        .sync_private_state();
+        .sync_private_state()
+        .simulate();
     const buyerethBalance = await eth
         .withWallet(buyer)
         .methods
@@ -78,6 +80,11 @@ const main = async () => {
     const fpcAddress = await getSponsoredFPCAddress();
     const feeJuiceBalanceFPC = await getFeeJuicePublicBalance(pxe, fpcAddress);
     console.log(`FeeJuice balance for FPC: ${feeJuiceBalanceFPC}`);
+
+    process.exit(0);
 }
 
-main();
+main().catch((e) => {
+    console.error(e);
+    process.exit(1);
+});

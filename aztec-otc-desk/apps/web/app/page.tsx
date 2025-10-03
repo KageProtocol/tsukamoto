@@ -311,43 +311,42 @@ export default function Home() {
                           const message = line.replace(/^data: /, "");
                           lastMessage = message;
 
-                          // Update action message to show progress (UI feedback)
+                          // Update action message to show progress
                           if (message && !message.startsWith("done:")) {
                             setActionMsg(message.slice(0, 150));
                           }
 
-                          // Check for completion and exit code
+                          // Check for exit code
                           if (message.startsWith("done:")) {
                             const code = message.match(/done: (\d+)/)?.[1];
                             exitCode = code ? parseInt(code) : null;
                           }
 
-                          // Check for definitive success indicators
-                          if (message.includes("Closed order") || message.includes("Fill operation completed successfully")) {
+                          // Success indicators
+                          if (message.includes("Order closed in OTC order service") ||
+                              message.includes("Closed order")) {
                             hasSuccess = true;
                           }
 
-                          // Check for real error indicators (only actual errors, not info logs)
-                          if (message.includes("[err]") || message.includes("Fill failed:") ||
-                              (message.includes("Error") && !message.includes("CREATE ERROR")) ||
-                              message.includes("Insufficient balance")) {
+                          // Error indicators
+                          if (message.includes("[err]") ||
+                              message.includes("Insufficient balance") ||
+                              message.includes("Error closing order") ||
+                              (message.includes("Error") && !message.includes("CREATE ERROR"))) {
                             hasError = true;
                           }
-
-                          // NO TOASTS DURING STREAMING - only show final result at the end
-                          // This prevents 100s of toast messages from flooding the UI
                         }
                       }
 
-                      // Strict success detection - only succeed if exit code is 0 AND success message
-                      const isSuccess = hasSuccess && !hasError && exitCode === 0;
+                      // Success = exit 0 AND (success message OR no errors)
+                      const isSuccess = exitCode === 0 && (hasSuccess || !hasError);
 
                       if (isSuccess) {
                         await fetchOrders();
+                        setBalanceRefreshing(true);
                         setActionMsg("Fill completed successfully. Order closed.");
-                        toast.success("Order filled and closed successfully!");
+                        toast.success("Order filled successfully!");
 
-                        // Log successful fill to transaction history
                         transactionStorage.addTransaction({
                           type: "order_filled",
                           orderId: o.orderId,
@@ -360,15 +359,18 @@ export default function Home() {
                           txHash: lastMessage.match(/0x[a-fA-F0-9]{64}/)?.[0]
                         });
                         loadTransactions();
+
+                        // Refresh balances after 2s
+                        setTimeout(() => setBalanceRefreshing(false), 2000);
                       } else {
                         const errorMsg = lastMessage.includes("Insufficient balance")
                           ? "Insufficient balance to fill order"
-                          : lastMessage.includes("Error")
-                          ? lastMessage.substring(0, 100)
+                          : hasError
+                          ? lastMessage.substring(0, 150)
                           : `Fill failed (exit code: ${exitCode ?? 'unknown'})`;
                         setActionMsg(errorMsg);
-                        toast.error("Fill operation failed - order remains open");
-                        await fetchOrders(); // Refresh to see current state
+                        toast.error("Fill operation failed");
+                        await fetchOrders();
                       }
                     } catch (e) {
                       setActionMsg(`Execute error: ${(e as Error).message}`);
@@ -611,8 +613,10 @@ export default function Home() {
       setBuyUsd(null);
       setOrderErrors({});
 
-      // Refresh orders list
+      // Refresh orders list and trigger balance refresh
       await fetchOrders();
+      setBalanceRefreshing(true);
+      setTimeout(() => setBalanceRefreshing(false), 3000);
 
     } catch (e) {
       // Handle network/parsing errors

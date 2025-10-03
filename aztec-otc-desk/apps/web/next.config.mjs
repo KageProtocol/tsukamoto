@@ -3,8 +3,37 @@ const nextConfig = {
   reactStrictMode: true,
   output: 'standalone',
   experimental: {
-    // Increase timeout for API routes (order creation takes ~30s)
-    serverComponentsExternalPackages: [],
+    serverComponentsExternalPackages: [
+      '@aztec/aztec.js',
+      '@aztec/accounts',
+      '@aztec/circuits.js',
+      '@aztec/foundation',
+    ],
+  },
+  webpack: (config, { isServer }) => {
+    if (isServer) {
+      // Copy WASM files to output
+      config.resolve.fallback = {
+        ...config.resolve.fallback,
+        fs: false,
+        net: false,
+        tls: false,
+      };
+    }
+
+    // Handle WASM files
+    config.experiments = {
+      ...config.experiments,
+      asyncWebAssembly: true,
+      layers: true,
+    };
+
+    config.module.rules.push({
+      test: /\.wasm$/,
+      type: 'asset/resource',
+    });
+
+    return config;
   },
   // API routes timeout configuration
   async headers() {

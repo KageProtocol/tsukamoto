@@ -26,43 +26,49 @@ export default function PortfolioModal({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [totalUsdValue, setTotalUsdValue] = useState<number>(0);
+  const [account, setAccount] = useState<"buyer" | "seller">("buyer");
 
-  // Mock balances for demo - in real implementation, this would fetch from blockchain
-  const mockBalances: TokenBalance[] = [
-    {
-      symbol: "ETH",
-      balance: "2.5",
-      usdValue: 8750, // 2.5 * 3500
-      address: "0x0e480358d5764487114eb224935edd6a1c9ac543ec8e56a221887d2d0ff332f9"
-    },
-    {
-      symbol: "USDC",
-      balance: "15000.0",
-      usdValue: 15000, // 15000 * 1
-      address: "0x127693bf58ba150b04732d0f9cfeb085b3effb37ade0221643108ff4e990f838"
-    }
-  ];
+  // Mock USD prices (in production, fetch from price oracle)
+  const USD_PRICES: Record<string, number> = {
+    ETH: 3500,
+    USDC: 1,
+  };
 
   const fetchBalances = async () => {
     setLoading(true);
     setError(null);
 
     try {
-      // TODO: Replace with actual balance fetching from the blockchain
-      // This would call the balance endpoints for each token
+      const res = await fetch(`/api/balances?account=${account}`);
+      const json = await res.json();
 
-      // Simulate API delay
-      await new Promise(resolve => setTimeout(resolve, 1000));
+      if (!json.success) {
+        throw new Error(json.error || "Failed to fetch balances");
+      }
 
-      // For now, use mock data
-      setBalances(mockBalances);
+      // Add USD values
+      const balancesWithUsd = json.data.map((token: any) => {
+        const balanceNum = parseFloat(token.balance) || 0;
+        return {
+          symbol: token.symbol,
+          balance: token.balance,
+          address: token.address,
+          usdValue: balanceNum * (USD_PRICES[token.symbol] || 0),
+        };
+      });
+
+      setBalances(balancesWithUsd);
 
       // Calculate total USD value
-      const total = mockBalances.reduce((sum, token) => sum + (token.usdValue || 0), 0);
+      const total = balancesWithUsd.reduce(
+        (sum: number, token: TokenBalance) => sum + (token.usdValue || 0),
+        0
+      );
       setTotalUsdValue(total);
-
     } catch (e) {
       setError((e as Error).message);
+      setBalances([]);
+      setTotalUsdValue(0);
     } finally {
       setLoading(false);
     }
@@ -72,11 +78,15 @@ export default function PortfolioModal({
     if (isOpen) {
       fetchBalances();
     }
-  }, [isOpen]);
+  }, [isOpen, account]);
 
   const handleRefresh = () => {
     fetchBalances();
     onRefresh?.();
+  };
+
+  const handleAccountSwitch = (newAccount: "buyer" | "seller") => {
+    setAccount(newAccount);
   };
 
   const formatUsdValue = (value: number) => {
@@ -131,6 +141,32 @@ export default function PortfolioModal({
             </button>
             <button className="btn btn-ghost" onClick={onClose}>✕</button>
           </div>
+        </div>
+
+        {/* Account switcher - temporary until wallet integration */}
+        <div style={{
+          display: "flex",
+          gap: 8,
+          marginBottom: 16,
+          padding: 8,
+          background: "#1a1a1a",
+          borderRadius: 8,
+          border: "1px solid #333"
+        }}>
+          <button
+            className={`btn btn-sm ${account === "buyer" ? "" : "btn-ghost"}`}
+            onClick={() => handleAccountSwitch("buyer")}
+            style={{ flex: 1 }}
+          >
+            👤 Buyer Account
+          </button>
+          <button
+            className={`btn btn-sm ${account === "seller" ? "" : "btn-ghost"}`}
+            onClick={() => handleAccountSwitch("seller")}
+            style={{ flex: 1 }}
+          >
+            🏪 Seller Account
+          </button>
         </div>
 
         {error && (
