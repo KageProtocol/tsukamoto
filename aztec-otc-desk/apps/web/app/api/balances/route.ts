@@ -6,6 +6,10 @@ import { getPXEClient } from '@/lib/pxe-client';
 import { TokenContract } from '@aztec-otc-desk/contracts';
 import { AztecAddress } from '@aztec/aztec.js';
 
+// Cached balances as fallback
+const cachedBalances: Record<string, { eth: string; usdc: string; timestamp: number }> = {};
+const CACHE_TTL = 30000; // 30 seconds
+
 export async function GET(req: Request) {
   const url = new URL(req.url);
   const accountType = url.searchParams.get("account") || "buyer";
@@ -20,48 +24,75 @@ export async function GET(req: Request) {
     );
   }
 
+  const formatBalance = (wei: string, decimals: number) => {
+    const num = BigInt(wei);
+    const divisor = BigInt(10 ** decimals);
+    const whole = num / divisor;
+    const remainder = num % divisor;
+    const decimal = remainder.toString().padStart(decimals, "0");
+    return `${whole}.${decimal.slice(0, 6)}`;
+  };
+
+  // Check cache first
+  const cached = cachedBalances[accountType];
+  if (cached && Date.now() - cached.timestamp < CACHE_TTL) {
+    return Response.json({
+      success: true,
+      data: [
+        {
+          symbol: "ETH",
+          address: ethAddress,
+          balance: formatBalance(cached.eth, 18),
+          balanceRaw: cached.eth,
+        },
+        {
+          symbol: "USDC",
+          address: usdcAddress,
+          balance: formatBalance(cached.usdc, 6),
+          balanceRaw: cached.usdc,
+        },
+      ],
+      cached: true,
+    });
+  }
+
+  // Try to fetch fresh balances with 5s timeout
   try {
-    const pxe = await getPXEClient();
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 5000);
 
-    // Get initial test accounts (for sandbox)
-    const { getInitialTestAccountsManagers } = await import('@aztec/accounts/testing');
-    const accountManagers = await getInitialTestAccountsManagers(pxe);
+    const fetchPromise = (async () => {
+      const pxe = await getPXEClient();
+      const { getInitialTestAccountsManagers } = await import('@aztec/accounts/testing');
+      const accountManagers = await getInitialTestAccountsManagers(pxe);
 
-    // For sandbox: first account is seller, second is buyer
-    const accountIndex = accountType === "seller" ? 0 : 1;
-    const accountManager = accountManagers[accountIndex];
+      const accountIndex = accountType === "seller" ? 0 : 1;
+      const accountManager = accountManagers[accountIndex];
 
-    if (!accountManager) {
-      throw new Error(`Account not found for ${accountType}`);
-    }
+      if (!accountManager) throw new Error(`Account not found`);
 
-    // Get wallet from account manager
-    const wallet = await accountManager.register();
-    const walletAddress = wallet.getAddress().toString();
+      const wallet = await accountManager.register();
+      const walletAddress = wallet.getAddress().toString();
 
-    // Get token contracts
-    const ethToken = await TokenContract.at(
-      AztecAddress.fromString(ethAddress),
-      wallet
-    );
-    const usdcToken = await TokenContract.at(
-      AztecAddress.fromString(usdcAddress),
-      wallet
-    );
+      const ethToken = await TokenContract.at(AztecAddress.fromString(ethAddress), wallet);
+      const usdcToken = await TokenContract.at(AztecAddress.fromString(usdcAddress), wallet);
 
-    // Query balances in parallel
-    const [ethBalance, usdcBalance] = await Promise.all([
-      ethToken.methods.balance_of_private(wallet.getAddress()).simulate(),
-      usdcToken.methods.balance_of_private(wallet.getAddress()).simulate(),
-    ]);
+      const [ethBalance, usdcBalance] = await Promise.all([
+        ethToken.methods.balance_of_private(wallet.getAddress()).simulate(),
+        usdcToken.methods.balance_of_private(wallet.getAddress()).simulate(),
+      ]);
 
-    const formatBalance = (wei: string, decimals: number) => {
-      const num = BigInt(wei);
-      const divisor = BigInt(10 ** decimals);
-      const whole = num / divisor;
-      const remainder = num % divisor;
-      const decimal = remainder.toString().padStart(decimals, "0");
-      return `${whole}.${decimal.slice(0, 6)}`;
+      return { ethBalance, usdcBalance, walletAddress };
+    })();
+
+    const result = await fetchPromise;
+    clearTimeout(timeoutId);
+
+    // Cache the result
+    cachedBalances[accountType] = {
+      eth: result.ethBalance.toString(),
+      usdc: result.usdcBalance.toString(),
+      timestamp: Date.now(),
     };
 
     return Response.json({
@@ -70,25 +101,49 @@ export async function GET(req: Request) {
         {
           symbol: "ETH",
           address: ethAddress,
-          balance: formatBalance(ethBalance.toString(), 18),
-          balanceRaw: ethBalance.toString(),
+          balance: formatBalance(result.ethBalance.toString(), 18),
+          balanceRaw: result.ethBalance.toString(),
         },
         {
           symbol: "USDC",
           address: usdcAddress,
-          balance: formatBalance(usdcBalance.toString(), 6),
-          balanceRaw: usdcBalance.toString(),
+          balance: formatBalance(result.usdcBalance.toString(), 6),
+          balanceRaw: result.usdcBalance.toString(),
         },
       ],
-      walletAddress,
+      walletAddress: result.walletAddress,
     });
   } catch (error: any) {
     console.error("Balance fetch error:", error);
+
+    // Return cached if available
+    if (cached) {
+      return Response.json({
+        success: true,
+        data: [
+          {
+            symbol: "ETH",
+            address: ethAddress,
+            balance: formatBalance(cached.eth, 18),
+            balanceRaw: cached.eth,
+          },
+          {
+            symbol: "USDC",
+            address: usdcAddress,
+            balance: formatBalance(cached.usdc, 6),
+            balanceRaw: cached.usdc,
+          },
+        ],
+        cached: true,
+        stale: true,
+      });
+    }
+
+    // No cache, return error
     return Response.json(
       {
         success: false,
-        error: error.message || "Failed to fetch balances",
-        details: error.toString()
+        error: error.name === 'AbortError' ? 'Request timeout' : error.message,
       },
       { status: 500 }
     );

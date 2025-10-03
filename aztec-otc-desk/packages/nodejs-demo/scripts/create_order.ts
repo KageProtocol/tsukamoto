@@ -149,7 +149,7 @@ const main = async () => {
 
     // update api to add order with enhanced metadata
     console.log("Registering order with API...");
-    await createOrder(
+    const orderId = await createOrder(
         escrowContract.address,
         escrowContract.instance,
         secretKey,
@@ -161,9 +161,6 @@ const main = async () => {
         API_URL
     );
 
-    // Generate and return order ID for the API response
-    const orderId = `${orderParams.orderNonce}_${Date.now().toString().slice(-6)}`;
-    console.log(`Order ID: ${orderId}`);
     console.log("Order created successfully!");
 
     // Log enhanced order summary

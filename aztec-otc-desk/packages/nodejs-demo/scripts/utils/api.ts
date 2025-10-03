@@ -143,9 +143,12 @@ export const createOrder = async (
       },
     });
     if (!res.ok) {
-      throw new Error("Failed to fetch health status");
+      throw new Error("Failed to create order in API");
     }
+    const result = await res.json();
     console.log("Order added to otc order service");
+    console.log(`Order ID: ${payload.orderId}`);
+    return payload.orderId; // Return the actual order ID used
   } catch (err) {
     throw new Error("Error creating order: " + (err as Error).message);
   }

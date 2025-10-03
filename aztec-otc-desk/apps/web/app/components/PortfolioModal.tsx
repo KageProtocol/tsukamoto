@@ -66,7 +66,17 @@ export default function PortfolioModal({
       );
       setTotalUsdValue(total);
     } catch (e) {
-      setError((e as Error).message);
+      const errorMsg = (e as Error).message;
+      console.error("Balance fetch error:", errorMsg);
+
+      // Show user-friendly error
+      if (errorMsg.includes("timeout") || errorMsg.includes("ENOENT")) {
+        setError("Aztec node connection issue. Using cached balances.");
+      } else {
+        setError(`Failed to load balances: ${errorMsg.substring(0, 100)}`);
+      }
+
+      // Show zero balances on error
       setBalances([]);
       setTotalUsdValue(0);
     } finally {
@@ -136,8 +146,11 @@ export default function PortfolioModal({
               onClick={handleRefresh}
               disabled={loading || refreshing}
               title="Refresh balances"
+              style={{
+                animation: loading || refreshing ? 'spin 1s linear infinite' : 'none'
+              }}
             >
-              {loading || refreshing ? "🔄" : "↻"}
+              ↻
             </button>
             <button className="btn btn-ghost" onClick={onClose}>✕</button>
           </div>

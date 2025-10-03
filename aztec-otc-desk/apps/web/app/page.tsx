@@ -105,6 +105,13 @@ export default function Home() {
   useEffect(() => {
     fetchOrders();
     loadTransactions();
+
+    // Auto-refresh orders every 10 seconds
+    const interval = setInterval(() => {
+      fetchOrders();
+    }, 10000);
+
+    return () => clearInterval(interval);
   }, []);
 
   const fillOrder = async (o: Order) => {
