@@ -14,6 +14,7 @@ import { OrderStatusWithContext } from "./components/OrderStatusBadge";
 import { withErrorHandling, handleApiResponse, StreamToastThrottler } from "../lib/errorHandler";
 import WalletConnect from "./components/WalletConnect";
 import { useWallet } from "@/lib/wallet-provider";
+import { useOrderEvents, OrderEvent } from "@/lib/use-order-events";
 
 type Order = {
   orderId: string;
@@ -115,16 +116,42 @@ export default function Home() {
     setTransactions(transactionStorage.getHistory());
   };
 
+  // Handle real-time order events via SSE
+  const handleOrderEvent = (event: OrderEvent) => {
+    console.log('[Order Event]', event.type, event);
+
+    if (event.type === 'connected') {
+      console.log('[SSE] Connected to real-time order updates');
+      return;
+    }
+
+    // Refresh orders on any order event
+    if (event.type === 'order_created' ||
+        event.type === 'order_updated' ||
+        event.type === 'order_filled' ||
+        event.type === 'order_cancelled') {
+      fetchOrders();
+
+      // Show toast notification for order events
+      if (event.type === 'order_created') {
+        toast.info('New order created');
+      } else if (event.type === 'order_filled') {
+        toast.success('Order filled');
+      } else if (event.type === 'order_cancelled') {
+        toast.info('Order cancelled');
+      }
+    }
+  };
+
+  // Subscribe to real-time order events
+  useOrderEvents(handleOrderEvent, {
+    autoReconnect: true,
+    reconnectInterval: 3000
+  });
+
   useEffect(() => {
     fetchOrders();
     loadTransactions();
-
-    // Auto-refresh orders every 10 seconds
-    const interval = setInterval(() => {
-      fetchOrders();
-    }, 10000);
-
-    return () => clearInterval(interval);
   }, []);
 
   const fillOrder = async (o: Order) => {

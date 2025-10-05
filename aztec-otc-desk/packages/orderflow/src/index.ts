@@ -1,6 +1,7 @@
 import { serve } from "bun";
 import { register, Counter, Histogram, Gauge } from "prom-client";
 import db from "./db";
+import { eventBroadcaster } from "./events";
 
 const PORT = process.env.PORT || 3001;
 
@@ -80,6 +81,40 @@ const server = serve({
     let route = url.pathname;
 
     try {
+      // Server-Sent Events endpoint for real-time order updates
+      if (url.pathname === "/events" && method === "GET") {
+        route = "/events";
+
+        const stream = new ReadableStream({
+          start(controller) {
+            // Add client to broadcaster
+            eventBroadcaster.addClient(controller);
+
+            // Set up cleanup on client disconnect
+            req.signal.addEventListener('abort', () => {
+              eventBroadcaster.removeClient(controller);
+              try {
+                controller.close();
+              } catch (e) {
+                // Ignore errors when closing
+              }
+            });
+          },
+          cancel() {
+            // Client disconnected
+          }
+        });
+
+        return new Response(stream, {
+          headers: {
+            'Content-Type': 'text/event-stream',
+            'Cache-Control': 'no-cache',
+            'Connection': 'keep-alive',
+            'Access-Control-Allow-Origin': '*',
+          }
+        });
+      }
+
       // Health check endpoint
       if (url.pathname === "/health") {
         route = "/health";
@@ -279,6 +314,9 @@ const server = serve({
             buyToken: order.buy_token_address
           });
 
+          // Broadcast order created event to SSE clients
+          eventBroadcaster.orderCreated(order.order_id, transformOrderForAPI(order));
+
           const response = new Response(JSON.stringify({
             success: true,
             message: "Order created successfully",
@@ -350,6 +388,9 @@ const server = serve({
             orderId: updatedOrder.order_id,
             status: updatedOrder.status
           });
+
+          // Broadcast order filled event to SSE clients
+          eventBroadcaster.orderFilled(updatedOrder.order_id, transformOrderForAPI(updatedOrder));
 
           const response = new Response(JSON.stringify({
             success: true,
@@ -424,5 +465,9 @@ const server = serve({
 console.log(`✅ OTC Orderflow Service running on http://localhost:${PORT}`);
 console.log(`📋 Available endpoints:`);
 console.log(`   GET /health - Health check`);
+console.log(`   GET /events - Server-Sent Events (SSE) for real-time updates`);
 console.log(`   GET /orders - List orders`);
+console.log(`   GET /order?id=<id> - Get single order`);
+console.log(`   POST /order - Create order`);
+console.log(`   DELETE /order?id=<id> - Close/cancel order`);
 console.log(`   GET /metrics - Prometheus metrics`);
