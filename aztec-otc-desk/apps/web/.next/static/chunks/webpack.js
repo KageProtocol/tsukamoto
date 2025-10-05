@@ -163,7 +163,7 @@
 /******/ 		// This function allow to reference async chunks
 /******/ 		__webpack_require__.u = function(chunkId) {
 /******/ 			// return url for filenames based on template
-/******/ 			return "static/chunks/" + chunkId + ".js";
+/******/ 			return undefined;
 /******/ 		};
 /******/ 	}();
 /******/ 	
@@ -192,7 +192,7 @@
 /******/ 	
 /******/ 	/* webpack/runtime/getFullHash */
 /******/ 	!function() {
-/******/ 		__webpack_require__.h = function() { return "c50a6a6db146a81d"; }
+/******/ 		__webpack_require__.h = function() { return "e61bb631026b5d82"; }
 /******/ 	}();
 /******/ 	
 /******/ 	/* webpack/runtime/global */
@@ -276,21 +276,6 @@
 /******/ 			if (!module.children) module.children = [];
 /******/ 			return module;
 /******/ 		};
-/******/ 	}();
-/******/ 	
-/******/ 	/* webpack/runtime/relative url */
-/******/ 	!function() {
-/******/ 		__webpack_require__.U = function RelativeURL(url) {
-/******/ 			var realUrl = new URL(url, "x:/");
-/******/ 			var values = {};
-/******/ 			for (var key in realUrl) values[key] = realUrl[key];
-/******/ 			values.href = url;
-/******/ 			values.pathname = url.replace(/[?#].*/, "");
-/******/ 			values.origin = values.protocol = "";
-/******/ 			values.toString = values.toJSON = function() { return url; };
-/******/ 			for (var key in values) Object.defineProperty(this, key, { enumerable: true, configurable: true, value: values[key] });
-/******/ 		};
-/******/ 		__webpack_require__.U.prototype = URL.prototype;
 /******/ 	}();
 /******/ 	
 /******/ 	/* webpack/runtime/trusted types policy */
@@ -838,7 +823,7 @@
 /******/ 	
 /******/ 	/* webpack/runtime/jsonp chunk loading */
 /******/ 	!function() {
-/******/ 		__webpack_require__.b = document.baseURI || self.location.href;
+/******/ 		// no baseURI
 /******/ 		
 /******/ 		// object to store loaded and loading chunks
 /******/ 		// undefined = chunk not loaded, null = chunk preloaded/prefetched

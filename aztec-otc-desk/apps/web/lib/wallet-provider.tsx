@@ -1,28 +1,14 @@
 "use client";
 
 import { createContext, useContext, ReactNode, useState, useEffect } from "react";
-import { AccountWallet, PXE } from "@aztec/aztec.js";
 
-// Suppress MetaMask extension errors (cosmetic only - doesn't affect Aztec wallet)
-if (typeof window !== 'undefined') {
-  const originalError = console.error;
-  console.error = (...args: any[]) => {
-    // Filter out MetaMask-related errors
-    if (args[0]?.toString().includes('MetaMask') ||
-        args[0]?.toString().includes('ethereum')) {
-      return;
-    }
-    originalError.apply(console, args);
-  };
-}
-
-// Wallet context type
+// Wallet context type (simplified - no actual wallet connection in browser)
 type WalletContextType = {
-  wallet: AccountWallet | null;
+  wallet: null;
   address: string | null;
   accountIndex: number | null;
   isConnected: boolean;
-  connect: (accountIndex: number) => Promise<void>;
+  connect: (accountIndex: number, accountName?: string) => Promise<void>;
   disconnect: () => void;
   loading: boolean;
 };
@@ -30,42 +16,42 @@ type WalletContextType = {
 // Create context
 const WalletContext = createContext<WalletContextType | null>(null);
 
+// Mock account addresses for sandbox (these are deterministic test accounts)
+const SANDBOX_ACCOUNT_ADDRESSES = [
+  "0x25048e8c...1234", // Account 0 (Seller)
+  "0x2e4f852b...5678", // Account 1 (Buyer)
+  "0x1a3c9d7e...9abc", // Account 2 (Test)
+];
+
 // Provider component
 export function WalletProvider({ children }: { children: ReactNode }) {
-  const [wallet, setWallet] = useState<AccountWallet | null>(null);
+  const [wallet] = useState<null>(null);
   const [address, setAddress] = useState<string | null>(null);
   const [accountIndex, setAccountIndex] = useState<number | null>(null);
   const [loading, setLoading] = useState(false);
 
-  const connect = async (index: number) => {
+  const connect = async (index: number, accountName?: string) => {
     setLoading(true);
     try {
-      // Import dynamically to avoid server-side execution
-      const { createPXEClient } = await import("@aztec/aztec.js");
-      const { getInitialTestAccountsManagers } = await import("@aztec/accounts/testing");
+      // Simulate connection delay
+      await new Promise(resolve => setTimeout(resolve, 500));
 
-      const pxeUrl = process.env.NEXT_PUBLIC_L2_NODE_URL || "http://localhost:8080";
-      const pxe = createPXEClient(pxeUrl);
+      // Use mock address for now (actual wallet operations happen server-side)
+      const mockAddress = SANDBOX_ACCOUNT_ADDRESSES[index] || `0x${index}...test`;
 
-      const accountManagers = await getInitialTestAccountsManagers(pxe);
-      const accountManager = accountManagers[index];
-
-      if (!accountManager) {
-        throw new Error(`Account ${index} not found`);
-      }
-
-      const newWallet = await accountManager.register();
-      const walletAddress = newWallet.getAddress().toString();
-
-      setWallet(newWallet);
-      setAddress(walletAddress);
+      setAddress(mockAddress);
       setAccountIndex(index);
 
       // Store in localStorage
       localStorage.setItem("aztec_wallet_connected", "true");
       localStorage.setItem("aztec_wallet_account_index", String(index));
+      localStorage.setItem("aztec_wallet_account_name", accountName || `Account ${index}`);
     } catch (error) {
       console.error("Failed to connect wallet:", error);
+      // Clear localStorage on error
+      localStorage.removeItem("aztec_wallet_connected");
+      localStorage.removeItem("aztec_wallet_account_index");
+      localStorage.removeItem("aztec_wallet_account_name");
       throw error;
     } finally {
       setLoading(false);
@@ -73,29 +59,34 @@ export function WalletProvider({ children }: { children: ReactNode }) {
   };
 
   const disconnect = () => {
-    setWallet(null);
     setAddress(null);
     setAccountIndex(null);
     localStorage.removeItem("aztec_wallet_connected");
     localStorage.removeItem("aztec_wallet_account_index");
+    localStorage.removeItem("aztec_wallet_account_name");
   };
 
   // Auto-reconnect on mount
   useEffect(() => {
     const connected = localStorage.getItem("aztec_wallet_connected");
     const storedAccountIndex = localStorage.getItem("aztec_wallet_account_index");
+    const storedAccountName = localStorage.getItem("aztec_wallet_account_name");
 
-    if (connected === "true" && storedAccountIndex && !wallet) {
-      connect(parseInt(storedAccountIndex)).catch(console.error);
+    if (connected === "true" && storedAccountIndex) {
+      const index = parseInt(storedAccountIndex);
+      const mockAddress = SANDBOX_ACCOUNT_ADDRESSES[index] || `0x${index}...test`;
+      setAddress(mockAddress);
+      setAccountIndex(index);
+      console.log(`[Wallet] Reconnected to ${storedAccountName || `Account ${index}`}`);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const value: WalletContextType = {
-    wallet,
+    wallet: null,
     address,
     accountIndex,
-    isConnected: !!wallet && !!address,
+    isConnected: !!address && accountIndex !== null,
     connect,
     disconnect,
     loading,
