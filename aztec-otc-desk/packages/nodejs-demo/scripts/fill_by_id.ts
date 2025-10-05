@@ -15,7 +15,7 @@ import {
 } from "./utils";
 
 async function main() {
-  const { L2_NODE_URL, API_URL, ORDER_ID } = process.env as Record<
+  const { L2_NODE_URL, API_URL, ORDER_ID, WALLET_ACCOUNT_INDEX } = process.env as Record<
     string,
     string
   >;
@@ -24,7 +24,21 @@ async function main() {
   if (!ORDER_ID) throw new Error("ORDER_ID is not defined");
 
   const pxe = await createPXE(0);
-  const { buyer } = await getOTCAccounts(pxe);
+
+  // Get account index from environment (set by API)
+  const walletAccountIndex = WALLET_ACCOUNT_INDEX ? parseInt(WALLET_ACCOUNT_INDEX) : 1; // Default to buyer (account 1)
+
+  // Get test accounts
+  const { getInitialTestAccountsManagers } = await import('@aztec/accounts/testing');
+  const accountManagers = await getInitialTestAccountsManagers(pxe);
+  const accountManager = accountManagers[walletAccountIndex];
+
+  if (!accountManager) {
+    throw new Error(`Account ${walletAccountIndex} not found`);
+  }
+
+  const buyer = await accountManager.register();
+  console.log(`Using wallet account ${walletAccountIndex} as buyer: ${buyer.getAddress().toString()}`);
 
   // fetch order by id with include_sensitive=true (requires HMAC)
   const ts = Math.floor(Date.now() / 1000).toString();

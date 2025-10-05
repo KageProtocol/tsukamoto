@@ -18,6 +18,8 @@ type OrderCreateRequest = {
   slippageBps?: number;
   orderNonce?: string;
   domainSeparator?: string;
+  walletAddress?: string;
+  accountIndex?: number;
 };
 
 // Standardized error response
@@ -179,6 +181,9 @@ export async function POST(req: Request) {
 
     const validatedParams = validation.sanitized!;
 
+    // Get account index from request (provided by wallet)
+    const accountIndex = orderParams.accountIndex ?? 0; // Default to account 0 (seller)
+
     const root = path.resolve(process.cwd(), "../..");
     const scriptPath = path.resolve(
       root,
@@ -193,6 +198,7 @@ export async function POST(req: Request) {
         "http://localhost:3001",
       API_HMAC_SECRET:
         process.env.OTC_HMAC_SECRET || process.env.API_HMAC_SECRET || "development_secret_key_32_chars_min",
+      WALLET_ACCOUNT_INDEX: accountIndex.toString(),
     };
 
     // Add validated parameters to environment
@@ -202,7 +208,8 @@ export async function POST(req: Request) {
       buyToken: validatedParams.buyTokenAddress.slice(0, 10) + '...',
       buyAmount: validatedParams.buyTokenAmount,
       expiryHours: validatedParams.expiryHours,
-      slippageBps: validatedParams.slippageBps
+      slippageBps: validatedParams.slippageBps,
+      walletAddress: validatedParams.walletAddress?.slice(0, 10) + '...' || 'default'
     });
 
     env.WIZARD_SELL_TOKEN = validatedParams.sellTokenAddress;

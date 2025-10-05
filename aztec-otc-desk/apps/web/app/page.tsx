@@ -12,6 +12,8 @@ import PortfolioModal from "./components/PortfolioModal";
 import { useConfirmDialog } from "./components/ConfirmDialog";
 import { OrderStatusWithContext } from "./components/OrderStatusBadge";
 import { withErrorHandling, handleApiResponse, StreamToastThrottler } from "../lib/errorHandler";
+import WalletConnect from "./components/WalletConnect";
+import { useWallet } from "@/lib/wallet-provider";
 
 type Order = {
   orderId: string;
@@ -27,6 +29,7 @@ type Order = {
 };
 
 export default function Home() {
+  const { wallet, address, accountIndex, isConnected } = useWallet();
   const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -90,7 +93,17 @@ export default function Home() {
       const res = await fetch(`${apiUrl}?${qs.toString()}`);
       const json = await res.json();
       if (!json.success) throw new Error(json.error || "Failed to fetch");
-      setOrders(json.data || []);
+
+      // Filter orders to only show those with current token addresses
+      const validOrders = (json.data || []).filter((order: any) => {
+        const sellAddr = order.sellTokenAddress?.toLowerCase();
+        const buyAddr = order.buyTokenAddress?.toLowerCase();
+        const validSellAddrs = [ETH_ADDR.toLowerCase(), USDC_ADDR.toLowerCase()];
+        const validBuyAddrs = [ETH_ADDR.toLowerCase(), USDC_ADDR.toLowerCase()];
+        return validSellAddrs.includes(sellAddr) && validBuyAddrs.includes(buyAddr);
+      });
+
+      setOrders(validOrders);
     } catch (e) {
       setError((e as Error).message);
     } finally {
@@ -115,6 +128,12 @@ export default function Home() {
   }, []);
 
   const fillOrder = async (o: Order) => {
+    // Check wallet connection first
+    if (!wallet || !address) {
+      toast.error("Please connect your wallet to fill orders");
+      return;
+    }
+
     setActionMsg(null);
     try {
       const res = await fetch("/api/fill", {
@@ -125,6 +144,8 @@ export default function Home() {
           escrowAddress: o.escrowAddress,
           sellTokenAddress: o.sellTokenAddress,
           buyTokenAddress: o.buyTokenAddress,
+          walletAddress: address,
+          accountIndex: accountIndex,
         }),
       });
       const json = await res.json();
@@ -301,7 +322,7 @@ export default function Home() {
 
                     try {
                       const resp = await fetch(
-                        `/api/fill/stream?orderId=${o.orderId}`,
+                        `/api/fill/stream?orderId=${o.orderId}&accountIndex=${accountIndex || 1}`,
                       );
                       if (!resp.ok || !resp.body)
                         throw new Error("Stream failed");
@@ -535,6 +556,12 @@ export default function Home() {
   };
 
   const createOrder = async () => {
+    // Check wallet connection first
+    if (!wallet || !address) {
+      toast.error("Please connect your wallet to create orders");
+      return;
+    }
+
     if (!validateOrder()) return;
 
     setCreatingOrder(true);
@@ -547,7 +574,10 @@ export default function Home() {
         expiryHours: orderParams.expiry,
         slippageBps: orderParams.slippageBps,
         // Include minFillAmount if specified
-        ...(orderParams.minFill && { minFillAmount: orderParams.minFill })
+        ...(orderParams.minFill && { minFillAmount: orderParams.minFill }),
+        // Include wallet info
+        walletAddress: address,
+        accountIndex: accountIndex
       };
 
       const res = await fetch("/api/order/create", {
@@ -653,6 +683,7 @@ export default function Home() {
           >
             💰 Portfolio
           </button>
+          <WalletConnect />
           <span className="pill">Sandbox</span>
         </div>
       </div>
@@ -829,14 +860,31 @@ export default function Home() {
 
           {/* Create Order Button */}
           <div style={{ marginBottom: 12 }}>
-            <button
-              className="btn btn-primary"
-              onClick={createOrder}
-              disabled={creatingOrder}
-              style={{ width: "100%", padding: "10px 16px", fontSize: 13, fontWeight: 600 }}
-            >
-              {creatingOrder ? "Creating..." : "Create Order"}
-            </button>
+            {!isConnected ? (
+              <div style={{
+                padding: "12px",
+                background: "#0f172a",
+                borderRadius: 8,
+                border: "1px solid #1e293b",
+                textAlign: "center"
+              }}>
+                <div style={{ fontSize: 12, color: "#64748b", marginBottom: 4 }}>
+                  🔌 Wallet Required
+                </div>
+                <div style={{ fontSize: 11, color: "#475569" }}>
+                  Connect your wallet above to create orders
+                </div>
+              </div>
+            ) : (
+              <button
+                className="btn btn-primary"
+                onClick={createOrder}
+                disabled={creatingOrder}
+                style={{ width: "100%", padding: "10px 16px", fontSize: 13, fontWeight: 600 }}
+              >
+                {creatingOrder ? "Creating..." : "Create Order"}
+              </button>
+            )}
           </div>
 
           {/* Quick Actions */}
@@ -986,6 +1034,7 @@ export default function Home() {
           setTimeout(() => setBalanceRefreshing(false), 2000);
         }}
         refreshing={balanceRefreshing}
+        connectedAddress={address}
       />
     </main>
   );

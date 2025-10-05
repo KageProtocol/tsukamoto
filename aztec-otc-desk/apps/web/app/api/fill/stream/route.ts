@@ -8,6 +8,7 @@ import path from "path";
 export async function GET(req: Request) {
   const url = new URL(req.url);
   const orderId = url.searchParams.get("orderId");
+  const accountIndex = url.searchParams.get("accountIndex") || "1"; // Default to buyer (account 1)
   if (!orderId) return new Response("Missing orderId", { status: 400 });
 
   const root = path.resolve(process.cwd(), "../..");
@@ -18,6 +19,7 @@ export async function GET(req: Request) {
   const env = {
     ...process.env,
     ORDER_ID: orderId,
+    WALLET_ACCOUNT_INDEX: accountIndex,
     L2_NODE_URL: process.env.L2_NODE_URL || "http://localhost:8080",
     API_URL:
       process.env.OTC_API_URL ||

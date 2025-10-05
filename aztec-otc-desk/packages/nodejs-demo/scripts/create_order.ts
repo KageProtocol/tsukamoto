@@ -87,8 +87,20 @@ const main = async () => {
 
     const pxe = await createPXE();
 
-    // get accounts
-    const { seller } = await getOTCAccounts(pxe);
+    // Get account index from environment (set by API)
+    const walletAccountIndex = process.env.WALLET_ACCOUNT_INDEX ? parseInt(process.env.WALLET_ACCOUNT_INDEX) : 0;
+
+    // Get test accounts
+    const { getInitialTestAccountsManagers } = await import('@aztec/accounts/testing');
+    const accountManagers = await getInitialTestAccountsManagers(pxe);
+    const accountManager = accountManagers[walletAccountIndex];
+
+    if (!accountManager) {
+        throw new Error(`Account ${walletAccountIndex} not found`);
+    }
+
+    const seller = await accountManager.register();
+    console.log(`Using wallet account ${walletAccountIndex}: ${seller.getAddress().toString()}`);
 
     // get tokens using orderParams
     const sellTokenAddress = AztecAddress.fromString(orderParams.sellTokenAddr);

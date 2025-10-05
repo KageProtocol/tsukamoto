@@ -1,16 +1,17 @@
 # Aztec OTC Desk
 
-A private over-the-counter (OTC) trading platform built on the Aztec protocol, designed to facilitate confidential and secure asset swaps between parties using zero-knowledge proofs. The platform enables private and secure peer-to-peer token swaps through smart contract escrows while ensuring transaction confidentiality and security.
+A private over-the-counter (OTC) trading platform built on the Aztec protocol. Facilitates confidential peer-to-peer token swaps through smart contract escrows using zero-knowledge proofs.
 
-📖 **Read our detailed article explaining why we built this and how it works:** [https://x.com/bajpaiharsh244/status/1968996432855392747](https://x.com/bajpaiharsh244/status/1968996432855392747)
+📖 **Read our detailed article:** [https://x.com/bajpaiharsh244/status/1968996432855392747](https://x.com/bajpaiharsh244/status/1968996432855392747)
 
 ## 🏗️ Architecture Overview
 
-The Aztec OTC Desk is a monorepo containing three main packages that work together to provide a complete private OTC trading solution:
+The Aztec OTC Desk is a monorepo containing four main packages:
 
-- **📄 Contracts**: Aztec Noir smart contracts implementing core OTC Desk functionality with private trading capabilities
-- **🖥️ CLI Demo**: Node.js/Bun-based command-line interface demonstrating the complete workflow from order creation to fulfillment
-- **🌐 Orderflow Service**: RESTful HTTP service for order management, discovery, and coordination between traders
+- **📄 Contracts**: Aztec Noir smart contracts for OTC escrow with private transfers
+- **🖥️ CLI Demo**: Command-line interface for testing order creation and fulfillment
+- **🌐 Orderflow Service**: RESTful API for order management and discovery
+- **🌐 Web UI**: Next.js application with wallet integration for browser-based trading
 
 ## 📦 Packages
 
@@ -99,7 +100,7 @@ bun run balances
 
 ### 3. 🌐 Orderflow Service (`packages/orderflow-service`)
 
-A RESTful HTTP service that provides order management and discovery capabilities, facilitating the creation, retrieval, and management of private OTC orders.
+A RESTful HTTP service for order management and discovery.
 
 **Key Features:**
 - **Order Management**: Create, update, and manage private OTC orders with unique escrow addresses
@@ -146,7 +147,7 @@ cd packages/orderflow-service
 
 # Install and start
 bun install
-bun run start  # Production mode
+bun run start  # Production mode (port 3001)
 bun run dev    # Development mode with hot reload
 
 # Run tests
@@ -155,6 +156,49 @@ bun run test:db          # Database tests only
 bun run test:handlers    # API handler tests only
 bun run test:integration # Integration tests only
 ```
+
+### 4. 🌐 Web UI (`apps/web`)
+
+Next.js application providing browser-based trading interface with wallet integration.
+
+**Key Features:**
+- **Wallet Integration**: Connect Aztec test accounts (Seller, Buyer, Test Account 3)
+- **Order Creation**: Create OTC orders from connected wallet
+- **Order Filling**: Fill orders using connected wallet
+- **Portfolio Management**: View balances for connected wallet
+- **Real-time Updates**: Auto-refresh orders every 10 seconds
+- **Transaction History**: Track order creation and fills
+- **Chart Integration**: Price charts for trading pairs
+
+**Wallet System:**
+- Account selection modal with 3 sandbox accounts
+- Persistent connection via localStorage
+- Account index determines transaction signer
+- Frontend passes accountIndex to backend
+- Backend scripts use WALLET_ACCOUNT_INDEX env var
+
+**Usage:**
+```bash
+cd apps/web
+
+# Install and start
+bun install
+bun run dev    # Development mode (port 5173)
+bun run build  # Production build
+
+# Environment variables
+L2_NODE_URL=http://localhost:8080              # Aztec sandbox
+NEXT_PUBLIC_OTC_API_URL=http://localhost:3001  # Orderflow service
+NEXT_PUBLIC_ETH_ADDRESS=0x...                  # ETH token address
+NEXT_PUBLIC_USDC_ADDRESS=0x...                 # USDC token address
+```
+
+**User Flow:**
+1. User connects wallet (selects account 0, 1, or 2)
+2. Create order: wallet's account index passed to backend
+3. Fill order: wallet's account index passed to backend
+4. Backend scripts use specified account for transactions
+5. Portfolio displays balances for connected account
 
 ## 🚀 Quick Start
 
@@ -181,47 +225,77 @@ cd packages/orderflow-service && bun install && cd ../..
 
 ### Development Setup
 
-**⚠️ Important: You MUST run the orderflow service for the demo to work properly!**
-
-#### Step-by-Step Setup (4 Terminals Required)
-
-**⚠️ Prerequisites: Build contracts first!**
+#### Prerequisites
 ```bash
+# Build contracts first
 cd packages/contracts
 bun install
-bun run build      # REQUIRED: Build contracts before starting services
+bun run build
 ```
 
-1. **Terminal 1 - Start Aztec Sandbox:**
+#### Option 1: Web UI (Recommended)
+
+**Terminal 1 - Aztec Sandbox:**
 ```bash
 cd packages/contracts
-bun run sandbox    # Start Aztec sandbox
+bun run sandbox
 ```
 
-2. **Terminal 2 - Start Secondary PXE** (wait for sandbox to be ready):
-```bash
-cd packages/contracts
-bun run pxe:local:1      # Start buyer's PXE
-```
-*Wait for message like "Cannot enqueue vote cast signal 0 for address zero at slot 8" indicating sandbox is ready*
-
-3. **Terminal 3 - Start Orderflow Service** ⭐ **REQUIRED**:
+**Terminal 2 - Orderflow Service:**
 ```bash
 cd packages/orderflow-service
 bun install
-bun run start      # Starts on http://localhost:3000
+bun run start    # Port 3001
 ```
 
-4. **Terminal 4 - Deploy Contracts & Run Demo:**
+**Terminal 3 - Deploy & Mint:**
 ```bash
 cd packages/nodejs-demo
 bun install
-bun run setup:deploy    # Deploy token contracts
-bun run setup:mint      # Mint tokens to trading accounts ⭐ REQUIRED
-bun run balances        # Check balances after minting
-bun run order:create    # Create OTC order (seller)
-bun run order:fill      # Fill OTC order (buyer)
-bun run balances        # Check final balances
+bun run setup:deploy
+bun run setup:mint
+```
+
+**Terminal 4 - Web UI:**
+```bash
+cd apps/web
+bun install
+bun run dev      # Port 5173
+```
+
+Access UI at http://localhost:5173
+
+#### Option 2: CLI Demo
+
+**Terminal 1 - Aztec Sandbox:**
+```bash
+cd packages/contracts
+bun run sandbox
+```
+
+**Terminal 2 - Secondary PXE:**
+```bash
+cd packages/contracts
+bun run pxe:local:1
+```
+
+**Terminal 3 - Orderflow Service:**
+```bash
+cd packages/orderflow-service
+bun install
+bun run start    # Port 3001
+```
+
+**Terminal 4 - CLI Commands:**
+```bash
+cd packages/nodejs-demo
+bun install
+bun run setup:deploy
+bun run setup:mint
+bun run balances
+bun run order:create
+bun run order:fill
+bun run balances
 ```
 
 ## 🔧 Development
@@ -251,22 +325,39 @@ bun test
 
 ```
 aztec-otc-desk/
+├── apps/
+│   └── web/                     # Next.js web UI
+│       ├── app/
+│       │   ├── api/            # API routes
+│       │   │   ├── order/      # Order creation
+│       │   │   ├── fill/       # Order filling
+│       │   │   └── balances/   # Balance queries
+│       │   ├── components/     # React components
+│       │   │   ├── WalletConnect.tsx
+│       │   │   ├── PortfolioModal.tsx
+│       │   │   └── Chart.tsx
+│       │   └── page.tsx        # Main trading page
+│       └── lib/
+│           └── wallet-provider.tsx  # Wallet state management
 ├── packages/
-│   ├── contracts/           # Aztec Noir smart contracts
+│   ├── contracts/               # Aztec Noir contracts
 │   │   ├── src/
-│   │   │   ├── main.nr     # OTC Escrow Contract
-│   │   │   └── types/      # Custom types and notes
-│   │   ├── artifacts/      # Compiled contract artifacts
-│   │   └── ts/             # TypeScript bindings
-│   ├── nodejs-demo/         # CLI demonstration
-│   │   ├── scripts/        # Demo scripts
-│   │   └── data/           # Test data and deployments
-│   └── orderflow-service/   # HTTP orderflow service
-│       ├── src/            # API implementation
-│       └── tests/          # Comprehensive test suite
+│   │   │   ├── main.nr         # OTC Escrow Contract
+│   │   │   └── types/          # Custom types
+│   │   ├── artifacts/          # Compiled artifacts
+│   │   └── ts/                 # TypeScript bindings
+│   ├── nodejs-demo/             # CLI demo
+│   │   ├── scripts/
+│   │   │   ├── create_order.ts # Order creation (uses WALLET_ACCOUNT_INDEX)
+│   │   │   ├── fill_by_id.ts   # Order filling (uses WALLET_ACCOUNT_INDEX)
+│   │   │   └── utils/
+│   │   └── data/               # Deployments
+│   └── orderflow-service/       # HTTP API
+│       ├── src/                # API implementation
+│       └── tests/              # Test suite
 ├── deps/
-│   └── aztec-standards/    # Aztec standard contracts
-└── scripts/                # Root-level utility scripts
+│   └── aztec-standards/        # Aztec standards
+└── scripts/                    # Utility scripts
 ```
 
 ## 🔐 Privacy Features

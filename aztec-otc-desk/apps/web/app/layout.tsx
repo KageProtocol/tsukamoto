@@ -1,6 +1,7 @@
 import "./globals.css";
 import { ToastStack } from "./components/ToastStack";
 import { ErrorBoundary } from "./components/ErrorBoundary";
+import { WalletProvider } from "@/lib/wallet-provider";
 
 export const metadata = {
   title: "Tsukamoto OTC",
@@ -15,10 +16,12 @@ export default function RootLayout({
   return (
     <html lang="en" suppressHydrationWarning>
       <body>
-        <ErrorBoundary>
-          {children}
-        </ErrorBoundary>
-        <ToastStack />
+        <WalletProvider>
+          <ErrorBoundary>
+            {children}
+          </ErrorBoundary>
+          <ToastStack />
+        </WalletProvider>
       </body>
     </html>
   );

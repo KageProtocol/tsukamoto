@@ -1,1 +1,42 @@
-{}
+{
+  "../../node_modules/@aztec/bb.js/dest/browser/barretenberg_wasm/fetch_code/browser/index.js -> ./barretenberg-threads.js": {
+    "id": "../../node_modules/@aztec/bb.js/dest/browser/barretenberg_wasm/fetch_code/browser/index.js -> ./barretenberg-threads.js",
+    "files": [
+      "static/chunks/_app-pages-browser_node_modules_aztec_bb_js_dest_browser_barretenberg_wasm_fetch_code_browser-bb21a3.js"
+    ]
+  },
+  "../../node_modules/@aztec/bb.js/dest/browser/barretenberg_wasm/fetch_code/browser/index.js -> ./barretenberg.js": {
+    "id": "../../node_modules/@aztec/bb.js/dest/browser/barretenberg_wasm/fetch_code/browser/index.js -> ./barretenberg.js",
+    "files": [
+      "static/chunks/_app-pages-browser_node_modules_aztec_bb_js_dest_browser_barretenberg_wasm_fetch_code_browser-1907da.js"
+    ]
+  },
+  "../../node_modules/viem/_esm/actions/public/call.js -> ../../utils/ccip.js": {
+    "id": "../../node_modules/viem/_esm/actions/public/call.js -> ../../utils/ccip.js",
+    "files": [
+      "static/chunks/_app-pages-browser_node_modules_viem__esm_utils_ccip_js.js"
+    ]
+  },
+  "../../node_modules/viem/_esm/utils/rpc/webSocket.js -> isows": {
+    "id": "../../node_modules/viem/_esm/utils/rpc/webSocket.js -> isows",
+    "files": []
+  },
+  "../../node_modules/viem/_esm/utils/signature/recoverPublicKey.js -> @noble/curves/secp256k1": {
+    "id": "../../node_modules/viem/_esm/utils/signature/recoverPublicKey.js -> @noble/curves/secp256k1",
+    "files": [
+      "static/chunks/_app-pages-browser_node_modules_viem_node_modules_noble_curves_esm_secp256k1_js.js"
+    ]
+  },
+  "lib/wallet-provider.tsx -> @aztec/accounts/testing": {
+    "id": "lib/wallet-provider.tsx -> @aztec/accounts/testing",
+    "files": [
+      "static/chunks/_app-pages-browser_node_modules_aztec_accounts_dest_testing_index_js.js"
+    ]
+  },
+  "lib/wallet-provider.tsx -> @aztec/aztec.js": {
+    "id": "lib/wallet-provider.tsx -> @aztec/aztec.js",
+    "files": [
+      "static/chunks/_app-pages-browser_node_modules_aztec_aztec_js_dest_account_manager_account_manager_js-_app-p-6bbbca.js"
+    ]
+  }
+}

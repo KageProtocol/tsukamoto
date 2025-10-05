@@ -14,19 +14,22 @@ type PortfolioModalProps = {
   onClose: () => void;
   onRefresh?: () => void;
   refreshing?: boolean;
+  connectedAddress?: string | null;
 };
 
 export default function PortfolioModal({
   isOpen,
   onClose,
   onRefresh,
-  refreshing
+  refreshing,
+  connectedAddress
 }: PortfolioModalProps) {
   const [balances, setBalances] = useState<TokenBalance[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [totalUsdValue, setTotalUsdValue] = useState<number>(0);
   const [account, setAccount] = useState<"buyer" | "seller">("buyer");
+  const [showAccountSwitch, setShowAccountSwitch] = useState(false);
 
   // Mock USD prices (in production, fetch from price oracle)
   const USD_PRICES: Record<string, number> = {
@@ -156,31 +159,48 @@ export default function PortfolioModal({
           </div>
         </div>
 
-        {/* Account switcher - temporary until wallet integration */}
-        <div style={{
-          display: "flex",
-          gap: 8,
-          marginBottom: 16,
-          padding: 8,
-          background: "#1a1a1a",
-          borderRadius: 8,
-          border: "1px solid #333"
-        }}>
-          <button
-            className={`btn btn-sm ${account === "buyer" ? "" : "btn-ghost"}`}
-            onClick={() => handleAccountSwitch("buyer")}
-            style={{ flex: 1 }}
-          >
-            👤 Buyer Account
-          </button>
-          <button
-            className={`btn btn-sm ${account === "seller" ? "" : "btn-ghost"}`}
-            onClick={() => handleAccountSwitch("seller")}
-            style={{ flex: 1 }}
-          >
-            🏪 Seller Account
-          </button>
-        </div>
+        {/* Connected wallet info or account switcher */}
+        {connectedAddress ? (
+          <div style={{
+            marginBottom: 16,
+            padding: 12,
+            background: "#1a1a1a",
+            borderRadius: 8,
+            border: "1px solid #333"
+          }}>
+            <div style={{ fontSize: 12, color: "#9aa3ad", marginBottom: 4 }}>
+              Connected Wallet
+            </div>
+            <div style={{ fontFamily: "monospace", fontSize: 14, color: "#fff" }}>
+              {connectedAddress.substring(0, 10)}...{connectedAddress.substring(connectedAddress.length - 8)}
+            </div>
+          </div>
+        ) : (
+          <div style={{
+            display: "flex",
+            gap: 8,
+            marginBottom: 16,
+            padding: 8,
+            background: "#1a1a1a",
+            borderRadius: 8,
+            border: "1px solid #333"
+          }}>
+            <button
+              className={`btn btn-sm ${account === "buyer" ? "" : "btn-ghost"}`}
+              onClick={() => handleAccountSwitch("buyer")}
+              style={{ flex: 1 }}
+            >
+              👤 Buyer Account
+            </button>
+            <button
+              className={`btn btn-sm ${account === "seller" ? "" : "btn-ghost"}`}
+              onClick={() => handleAccountSwitch("seller")}
+              style={{ flex: 1 }}
+            >
+              🏪 Seller Account
+            </button>
+          </div>
+        )}
 
         {error && (
           <div style={{
