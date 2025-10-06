@@ -351,7 +351,7 @@ const server = serve({
             max_slippage_bps: orderData.maxSlippageBps,
             expiry_timestamp: orderData.expiryTimestamp,
             status: 'open',
-            created_by: orderData.createdBy || 'cli',
+            created_by: orderData.createdBy || (orderData.accountIndex !== undefined ? `cli_account_${orderData.accountIndex}` : 'cli'),
             workspace_id: orderData.workspaceId
           });
 

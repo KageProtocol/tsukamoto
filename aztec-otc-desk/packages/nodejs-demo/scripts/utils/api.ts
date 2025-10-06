@@ -83,6 +83,7 @@ export const getOrders = async (apiUrl: string): Promise<Order[]> => {
  * @param buyTokenAddress The address of the token to buy
  * @param buyTokenAmount The amount of the token to buy
  * @param apiUrl The base URL of the orderflow API
+ * @param accountIndex The account index creating the order
  */
 export const createOrder = async (
   escrowAddress: AztecAddress | string,
@@ -94,6 +95,7 @@ export const createOrder = async (
   buyTokenAddress: AztecAddress | string,
   buyTokenAmount: bigint,
   apiUrl: string,
+  accountIndex?: number,
 ) => {
   // parse inputs
   if (typeof escrowAddress === "string") {
@@ -124,7 +126,8 @@ export const createOrder = async (
     minFillAmount: sellTokenAmount.toString(),
     maxSlippageBps: 50, // 0.5%
     expiryTimestamp: Math.floor(Date.now() / 1000) + (24 * 60 * 60), // 24 hours from now
-    createdBy: "cli"
+    accountIndex,
+    createdBy: accountIndex !== undefined ? `cli_account_${accountIndex}` : "cli"
   };
   // post request to add order to api
   try {

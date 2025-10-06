@@ -170,7 +170,8 @@ const main = async () => {
         sellAmount,
         buyToken.address,
         buyAmount,
-        API_URL
+        API_URL,
+        walletAccountIndex
     );
 
     console.log("Order created successfully!");
