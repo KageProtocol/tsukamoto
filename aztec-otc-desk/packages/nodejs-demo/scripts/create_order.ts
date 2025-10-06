@@ -109,8 +109,9 @@ const main = async () => {
     const buyToken = await getTokenContract(pxe, seller, buyTokenAddress, L2_NODE_URL);
 
     // Convert amounts to proper values with validation
-    const sellAmount = wad(BigInt(Math.floor(Number(orderParams.sellAmountStr))));
-    const buyAmount = wad(BigInt(Math.floor(Number(orderParams.buyAmountStr))));
+    // Parse decimal amounts properly by multiplying by 1e18 first, then converting to BigInt
+    const sellAmount = BigInt(Math.floor(Number(orderParams.sellAmountStr) * 1e18));
+    const buyAmount = BigInt(Math.floor(Number(orderParams.buyAmountStr) * 1e18));
 
     // Calculate expiry timestamp
     const expiryTimestamp = Date.now() + (orderParams.expiryHours * 60 * 60 * 1000);
@@ -118,7 +119,7 @@ const main = async () => {
     // Validate minimum fill amount if provided
     let minFillAmountBigInt: bigint | undefined;
     if (orderParams.minFillAmount && orderParams.minFillAmount !== "") {
-        minFillAmountBigInt = wad(BigInt(Math.floor(Number(orderParams.minFillAmount))));
+        minFillAmountBigInt = BigInt(Math.floor(Number(orderParams.minFillAmount) * 1e18));
         if (minFillAmountBigInt > sellAmount) {
             throw new Error("Minimum fill amount cannot exceed sell amount");
         }

@@ -331,17 +331,20 @@ export default function Home() {
 
             {type === "received" && (
               <>
-                <button
-                  className="btn btn-sm"
-                  style={{ marginTop: 8 }}
-                  onClick={() => fillOrder(o)}
-                >
-                  Fetch fill details
-                </button>
-                <button
-                  className="btn btn-sm"
-                  style={{ marginLeft: 8 }}
-                  onClick={async () => {
+                {/* Only show execute button if user is NOT the seller (account 0) */}
+                {accountIndex !== 0 && (
+                  <>
+                    <button
+                      className="btn btn-sm"
+                      style={{ marginTop: 8 }}
+                      onClick={() => fillOrder(o)}
+                    >
+                      Fetch fill details
+                    </button>
+                    <button
+                      className="btn btn-sm"
+                      style={{ marginLeft: 8 }}
+                      onClick={async () => {
                     setActionMsg(null);
                     setExecutingId(o.orderId);
 
@@ -442,6 +445,20 @@ export default function Home() {
                     ? "Executing..."
                     : "Execute Local Fill"}
                 </button>
+                  </>
+                )}
+                {accountIndex === 0 && (
+                  <div style={{
+                    marginTop: 8,
+                    padding: "8px 12px",
+                    background: "#2a2a2a",
+                    borderRadius: 6,
+                    fontSize: 13,
+                    color: "#9aa3ad"
+                  }}>
+                    ℹ️ This is your order - switch to buyer account to execute
+                  </div>
+                )}
               </>
             )}
 
