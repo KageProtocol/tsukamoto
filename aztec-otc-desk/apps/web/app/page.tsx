@@ -72,6 +72,7 @@ export default function Home() {
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [balanceRefreshing, setBalanceRefreshing] = useState(false);
   const [showPortfolio, setShowPortfolio] = useState(false);
+  const [portfolioKey, setPortfolioKey] = useState(0); // Force re-render of portfolio
   const { confirm, ConfirmDialogComponent } = useConfirmDialog();
   const copy = async (text: string) => {
     try {
@@ -132,11 +133,13 @@ export default function Home() {
         event.type === 'order_cancelled') {
       fetchOrders();
 
-      // Show toast notification for order events
-      if (event.type === 'order_created') {
+      // Trigger live balance update on order filled
+      if (event.type === 'order_filled') {
+        console.log('[Balance] Order filled - refreshing balances');
+        setPortfolioKey(prev => prev + 1); // Force portfolio to refetch
+        toast.success('Order filled - balances updated');
+      } else if (event.type === 'order_created') {
         toast.info('New order created');
-      } else if (event.type === 'order_filled') {
-        toast.success('Order filled');
       } else if (event.type === 'order_cancelled') {
         toast.info('Order cancelled');
       }
@@ -156,7 +159,7 @@ export default function Home() {
 
   const fillOrder = async (o: Order) => {
     // Check wallet connection first
-    if (!wallet || !address) {
+    if (!address || accountIndex === null) {
       toast.error("Please connect your wallet to fill orders");
       return;
     }
@@ -584,7 +587,7 @@ export default function Home() {
 
   const createOrder = async () => {
     // Check wallet connection first
-    if (!wallet || !address) {
+    if (!address || accountIndex === null) {
       toast.error("Please connect your wallet to create orders");
       return;
     }
@@ -1054,6 +1057,7 @@ export default function Home() {
 
       <ConfirmDialogComponent />
       <PortfolioModal
+        key={portfolioKey}
         isOpen={showPortfolio}
         onClose={() => setShowPortfolio(false)}
         onRefresh={() => {

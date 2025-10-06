@@ -10,7 +10,7 @@ function sign(method: string, path: string, body: string, secret: string) {
 
 export async function POST(req: Request) {
   try {
-    const { orderId, escrowAddress, sellTokenAddress, buyTokenAddress } =
+    const { orderId, escrowAddress, sellTokenAddress, buyTokenAddress, accountIndex } =
       await req.json();
 
     const api =
@@ -52,6 +52,25 @@ export async function POST(req: Request) {
         }),
         { status: 500 },
       );
+    }
+
+    // Validate that buyer is not the seller
+    const order = data.data?.[0];
+    if (order) {
+      // createdBy is stored as "cli_account_X" where X is the account index
+      const sellerAccountIndex = order.createdBy?.match(/account_(\d+)/i)?.[1];
+
+      if (sellerAccountIndex !== undefined && accountIndex !== undefined) {
+        if (parseInt(sellerAccountIndex) === accountIndex) {
+          return new Response(
+            JSON.stringify({
+              success: false,
+              error: "Cannot fill your own order.",
+            }),
+            { status: 400 },
+          );
+        }
+      }
     }
 
     return new Response(JSON.stringify({ success: true, data: data.data }), {

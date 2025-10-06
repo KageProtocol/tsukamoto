@@ -2,6 +2,7 @@ import { serve } from "bun";
 import { register, Counter, Histogram, Gauge } from "prom-client";
 import db from "./db";
 import { eventBroadcaster } from "./events";
+import { initRedis, cache, pubsub, cacheKeys, CACHE_TTL, OrderEventPayload } from "./redis";
 
 const PORT = process.env.PORT || 3001;
 
@@ -70,6 +71,29 @@ const serviceInfo = new Gauge({
 serviceInfo.set({ version: '1.0.0', service: 'orderflow' }, 1);
 
 console.log(`🚀 OTC Orderflow Service starting on port ${PORT}`);
+
+// Initialize Redis
+initRedis().then(() => {
+  // Subscribe to Redis pub/sub and forward to SSE clients
+  pubsub.subscribe((event: OrderEventPayload) => {
+    console.log(`[Redis->SSE] Forwarding ${event.type} event to SSE clients`);
+    // Forward to eventBroadcaster
+    switch (event.type) {
+      case 'order_created':
+        eventBroadcaster.orderCreated(event.orderId, event.data);
+        break;
+      case 'order_filled':
+        eventBroadcaster.orderFilled(event.orderId, event.data);
+        break;
+      case 'order_cancelled':
+        eventBroadcaster.orderCancelled(event.orderId, event.data);
+        break;
+      case 'order_updated':
+        eventBroadcaster.orderUpdated(event.orderId, event.data);
+        break;
+    }
+  });
+});
 
 const server = serve({
   port: PORT,
@@ -219,17 +243,41 @@ const server = serve({
           // TODO: Validate HMAC signature here before allowing include_sensitive
           const includeSensitive = searchParams.get('include_sensitive') === 'true';
 
-          // Get orders from database
-          const orders = await db.getOrders({
-            status,
-            limit,
-            offset,
-            sellToken,
-            buyToken
-          });
+          // Try Redis cache first (only for non-sensitive requests with no pagination)
+          const cacheKey = cacheKeys.ordersList({ status, sellToken, buyToken });
+          let orders, totalCount;
 
-          // Get total count
-          const totalCount = await db.getOrderCount(status);
+          if (!includeSensitive && offset === 0) {
+            const cached = await cache.get(cacheKey);
+            if (cached) {
+              const cachedData = JSON.parse(cached);
+              orders = cachedData.orders;
+              totalCount = cachedData.totalCount;
+              console.log(`[Cache HIT] ${cacheKey}`);
+            }
+          }
+
+          // Cache miss - fetch from database
+          if (!orders) {
+            orders = await db.getOrders({
+              status,
+              limit,
+              offset,
+              sellToken,
+              buyToken
+            });
+
+            totalCount = await db.getOrderCount(status);
+
+            // Cache the result (only for first page)
+            if (offset === 0 && !includeSensitive) {
+              await cache.set(
+                cacheKey,
+                JSON.stringify({ orders, totalCount }),
+                CACHE_TTL.ORDERS_LIST
+              );
+            }
+          }
 
           // Update metrics
           ordersTotal.set(totalCount);
@@ -314,8 +362,21 @@ const server = serve({
             buyToken: order.buy_token_address
           });
 
+          // Invalidate cache
+          await cache.invalidatePattern('orders:*');
+
+          const transformedOrder = transformOrderForAPI(order);
+
+          // Publish to Redis pub/sub
+          await pubsub.publish({
+            type: 'order_created',
+            orderId: order.order_id,
+            data: transformedOrder,
+            timestamp: new Date().toISOString()
+          });
+
           // Broadcast order created event to SSE clients
-          eventBroadcaster.orderCreated(order.order_id, transformOrderForAPI(order));
+          eventBroadcaster.orderCreated(order.order_id, transformedOrder);
 
           const response = new Response(JSON.stringify({
             success: true,
@@ -389,8 +450,21 @@ const server = serve({
             status: updatedOrder.status
           });
 
+          // Invalidate cache
+          await cache.invalidatePattern('orders:*');
+
+          const transformedOrder = transformOrderForAPI(updatedOrder);
+
+          // Publish to Redis pub/sub
+          await pubsub.publish({
+            type: 'order_filled',
+            orderId: updatedOrder.order_id,
+            data: transformedOrder,
+            timestamp: new Date().toISOString()
+          });
+
           // Broadcast order filled event to SSE clients
-          eventBroadcaster.orderFilled(updatedOrder.order_id, transformOrderForAPI(updatedOrder));
+          eventBroadcaster.orderFilled(updatedOrder.order_id, transformedOrder);
 
           const response = new Response(JSON.stringify({
             success: true,

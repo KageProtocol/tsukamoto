@@ -9,8 +9,7 @@ if (!L2_NODE_URL) {
     throw new Error("L2_NODE_URL is not defined");
 }
 
-// - Mints 1 Eth to Buyer of the OTC
-// - Mints 5000 USDC to Buyer of the OTC
+// Mints both ETH and USDC to both seller and buyer accounts
 const main = async () => {
     const pxe = await createPXE();
 
@@ -24,28 +23,49 @@ const main = async () => {
     // if testnet, get send/ wait opts optimized for waiting and high gas
     const opts = await getTestnetSendWaitOptions(pxe);
 
-    // mint eth
-    console.log("Minting eth to seller account");
+    // mint ETH to seller
+    console.log("Minting ETH to seller account...");
     await eth
         .withWallet(seller)
         .methods
         .mint_to_private(seller.getAddress(), seller.getAddress(), ethMintAmount * 10n)
         .send(opts.send)
         .wait(opts.wait);
-    console.log("10 eth minted to seller");
+    console.log("✅ 10 ETH minted to seller");
+
+    // mint ETH to buyer
+    console.log("Minting ETH to buyer account...");
+    await eth
+        .withWallet(seller)
+        .methods
+        .mint_to_private(seller.getAddress(), buyer.getAddress(), ethMintAmount * 10n)
+        .send(opts.send)
+        .wait(opts.wait);
+    console.log("✅ 10 ETH minted to buyer");
 
     // get USDC token
     const usdcAddress = AztecAddress.fromString(usdcDeployment.address);
     const usdc = await getTokenContract(pxe, seller, usdcAddress, L2_NODE_URL);
 
-    console.log("Minting USDC to buyer account");
+    // mint USDC to seller
+    console.log("Minting USDC to seller account...");
+    await usdc
+        .withWallet(seller)
+        .methods
+        .mint_to_private(seller.getAddress(), seller.getAddress(), usdcMintAmount * 10n)
+        .send(opts.send)
+        .wait(opts.wait);
+    console.log("✅ 50,000 USDC minted to seller");
+
+    // mint USDC to buyer
+    console.log("Minting USDC to buyer account...");
     await usdc
         .withWallet(seller)
         .methods
         .mint_to_private(seller.getAddress(), buyer.getAddress(), usdcMintAmount * 10n)
         .send(opts.send)
         .wait(opts.wait);
-    console.log("50,000 USDC minted to buyer");
+    console.log("✅ 50,000 USDC minted to buyer");
 }
 
 main();
