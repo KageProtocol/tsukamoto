@@ -27,6 +27,8 @@ type Order = {
   status?: string;
   createdAt?: string | number;
   expiresAt?: number;
+  minFillAmount?: string;
+  maxSlippageBps?: number;
 };
 
 export default function Home() {
@@ -36,6 +38,8 @@ export default function Home() {
   const [error, setError] = useState<string | null>(null);
   const [actionMsg, setActionMsg] = useState<string | null>(null);
   const [executingId, setExecutingId] = useState<string | null>(null);
+  const [fetchingDetailsId, setFetchingDetailsId] = useState<string | null>(null);
+  const [cancellingId, setCancellingId] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
   const [filters, setFilters] = useState({
     sell: "",
@@ -107,7 +111,10 @@ export default function Home() {
 
       setOrders(validOrders);
     } catch (e) {
-      setError((e as Error).message);
+      const errorMsg = (e as Error).message;
+      setError(errorMsg);
+      toast.error(`Failed to load orders: ${errorMsg}`);
+      console.error("Fetch orders error:", e);
     } finally {
       setLoading(false);
     }
@@ -187,8 +194,10 @@ export default function Home() {
       toast.success("Fetched include_sensitive details");
       console.log("/api/fill response", json.data);
     } catch (e) {
-      setActionMsg(`Fill error: ${(e as Error).message}`);
-      toast.error((e as Error).message);
+      const errorMsg = (e as Error).message;
+      setActionMsg(`Fill error: ${errorMsg}`);
+      toast.error(`Failed to fetch fill details: ${errorMsg}`);
+      console.error("Fill order error:", e);
     }
   };
 
@@ -328,6 +337,22 @@ export default function Home() {
               </div>
               <OrderStatusWithContext order={o} size="sm" />
             </div>
+            <div style={{ opacity: 0.6, fontSize: 11, marginTop: 6, display: "flex", gap: 16, flexWrap: "wrap" }}>
+              {o.expiresAt && (
+                <span>
+                  Expires: {new Date(o.expiresAt * 1000).toLocaleString()}
+                  {o.expiresAt * 1000 < Date.now() && (
+                    <span style={{ color: "#ef4444", marginLeft: 6 }}>• Expired</span>
+                  )}
+                </span>
+              )}
+              {o.minFillAmount && (
+                <span>Min Fill: {formatTokenAmount(o.sellTokenAddress, o.minFillAmount)}</span>
+              )}
+              {o.maxSlippageBps !== undefined && (
+                <span>Max Slippage: {(o.maxSlippageBps / 100).toFixed(2)}%</span>
+              )}
+            </div>
 
             {type === "received" && (
               <>
@@ -337,9 +362,17 @@ export default function Home() {
                     <button
                       className="btn btn-sm"
                       style={{ marginTop: 8 }}
-                      onClick={() => fillOrder(o)}
+                      onClick={async () => {
+                        setFetchingDetailsId(o.orderId);
+                        try {
+                          await fillOrder(o);
+                        } finally {
+                          setFetchingDetailsId(null);
+                        }
+                      }}
+                      disabled={fetchingDetailsId === o.orderId}
                     >
-                      Fetch fill details
+                      {fetchingDetailsId === o.orderId ? "Fetching..." : "Fetch fill details"}
                     </button>
                     <button
                       className="btn btn-sm"
@@ -436,8 +469,12 @@ export default function Home() {
                     } catch (e) {
                       setActionMsg(`Execute error: ${(e as Error).message}`);
                       toast.error((e as Error).message);
+                      // Ensure we clean up on error
+                      await fetchOrders();
+                    } finally {
+                      setExecutingId(null);
+                      setBalanceRefreshing(false);
                     }
-                    setExecutingId(null);
                   }}
                   disabled={executingId === o.orderId}
                 >
@@ -481,32 +518,38 @@ export default function Home() {
 
                   if (!confirmed) return;
 
-                  setActionMsg(null);
-                  const res = await fetch("/api/order/cancel", {
-                    method: "POST",
-                    headers: { "content-type": "application/json" },
-                    body: JSON.stringify({ orderId: o.orderId }),
-                  });
+                  setCancellingId(o.orderId);
+                  try {
+                    setActionMsg(null);
+                    const res = await fetch("/api/order/cancel", {
+                      method: "POST",
+                      headers: { "content-type": "application/json" },
+                      body: JSON.stringify({ orderId: o.orderId }),
+                    });
 
-                  const json = await handleApiResponse(res, { errorPrefix: "Cancel failed" });
+                    const json = await handleApiResponse(res, { errorPrefix: "Cancel failed" });
 
-                  toast.success("Order cancelled");
-                  // Log cancellation to history
-                  transactionStorage.addTransaction({
-                    type: "order_cancelled",
-                    orderId: o.orderId,
-                    sellTokenAddress: o.sellTokenAddress,
-                    sellTokenAmount: o.sellTokenAmount,
-                    buyTokenAddress: o.buyTokenAddress,
-                    buyTokenAmount: o.buyTokenAmount,
-                    status: "completed",
-                    role: "maker"
-                  });
-                  loadTransactions();
-                  setTimeout(fetchOrders, 500);
+                    toast.success("Order cancelled");
+                    // Log cancellation to history
+                    transactionStorage.addTransaction({
+                      type: "order_cancelled",
+                      orderId: o.orderId,
+                      sellTokenAddress: o.sellTokenAddress,
+                      sellTokenAmount: o.sellTokenAmount,
+                      buyTokenAddress: o.buyTokenAddress,
+                      buyTokenAmount: o.buyTokenAmount,
+                      status: "completed",
+                      role: "maker"
+                    });
+                    loadTransactions();
+                    setTimeout(fetchOrders, 500);
+                  } finally {
+                    setCancellingId(null);
+                  }
                 }, { errorMessage: "Failed to cancel order", showToast: true })}
+                disabled={cancellingId === o.orderId}
               >
-                Cancel
+                {cancellingId === o.orderId ? "Cancelling..." : "Cancel"}
               </button>
             )}
           </li>
