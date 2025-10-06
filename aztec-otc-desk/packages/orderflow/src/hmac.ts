@@ -8,11 +8,13 @@ if (!HMAC_SECRET || HMAC_SECRET.length < 32) {
 
 /**
  * Generate HMAC signature for request data
- * @param data - The data to sign (typically orderId or request body)
- * @param timestamp - Unix timestamp (optional, for time-based validation)
+ * @param method - HTTP method (GET, POST, DELETE, etc.)
+ * @param path - Request path (e.g., "/order")
+ * @param timestamp - Unix timestamp in seconds
+ * @param body - Request body (empty string for GET/DELETE)
  */
-export function generateHmac(data: string, timestamp?: number): string {
-  const payload = timestamp ? `${data}:${timestamp}` : data;
+export function generateHmac(method: string, path: string, timestamp: string, body: string): string {
+  const payload = [method.toUpperCase(), path, timestamp, body].join('\n');
   const hmac = createHmac('sha256', HMAC_SECRET!);
   hmac.update(payload);
   return hmac.digest('hex');
@@ -20,47 +22,53 @@ export function generateHmac(data: string, timestamp?: number): string {
 
 /**
  * Validate HMAC signature from request headers
- * @param signature - The signature from X-HMAC-Signature header
- * @param data - The data that was signed
- * @param timestamp - Optional timestamp from X-HMAC-Timestamp header
+ * @param req - The request object
+ * @param method - HTTP method
+ * @param path - Request path
+ * @param body - Request body (empty string for GET/DELETE)
  * @param maxAge - Maximum age of signature in seconds (default: 300 = 5 minutes)
  */
 export function validateHmac(
-  signature: string | null,
-  data: string,
-  timestamp?: string | null,
+  req: Request,
+  method: string,
+  path: string,
+  body: string,
   maxAge: number = 300
 ): { valid: boolean; error?: string } {
   if (!HMAC_SECRET) {
     return { valid: false, error: 'HMAC secret not configured' };
   }
 
+  const signature = req.headers.get('x-signature');
+  const timestamp = req.headers.get('x-timestamp');
+
   if (!signature) {
     return { valid: false, error: 'Missing HMAC signature' };
   }
 
-  // Validate timestamp if provided
-  let ts: number | undefined;
-  if (timestamp) {
-    ts = parseInt(timestamp);
-    if (isNaN(ts)) {
-      return { valid: false, error: 'Invalid timestamp' };
-    }
+  if (!timestamp) {
+    return { valid: false, error: 'Missing timestamp' };
+  }
 
-    const now = Math.floor(Date.now() / 1000);
-    const age = now - ts;
+  // Validate timestamp
+  const ts = parseInt(timestamp);
+  if (isNaN(ts)) {
+    return { valid: false, error: 'Invalid timestamp' };
+  }
 
-    if (age > maxAge) {
-      return { valid: false, error: 'Signature expired' };
-    }
+  const now = Math.floor(Date.now() / 1000);
+  const age = now - ts;
 
-    if (age < -60) {
-      return { valid: false, error: 'Signature timestamp is in the future' };
-    }
+  if (age > maxAge) {
+    return { valid: false, error: 'Signature expired' };
+  }
+
+  if (age < -60) {
+    return { valid: false, error: 'Signature timestamp is in the future' };
   }
 
   // Generate expected signature
-  const expected = generateHmac(data, ts);
+  const expected = generateHmac(method, path, timestamp, body);
 
   // Timing-safe comparison to prevent timing attacks
   try {
@@ -78,15 +86,3 @@ export function validateHmac(
   }
 }
 
-/**
- * Extract HMAC headers from request
- */
-export function extractHmacHeaders(req: Request): {
-  signature: string | null;
-  timestamp: string | null;
-} {
-  return {
-    signature: req.headers.get('X-HMAC-Signature'),
-    timestamp: req.headers.get('X-HMAC-Timestamp')
-  };
-}

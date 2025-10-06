@@ -3,7 +3,7 @@ import { register, Counter, Histogram, Gauge } from "prom-client";
 import db from "./db";
 import { eventBroadcaster } from "./events";
 import { initRedis, cache, pubsub, cacheKeys, CACHE_TTL, OrderEventPayload } from "./redis";
-import { validateHmac, extractHmacHeaders } from "./hmac";
+import { validateHmac } from "./hmac";
 
 const PORT = process.env.PORT || 3001;
 
@@ -179,8 +179,7 @@ const server = serve({
           const includeSensitive = url.searchParams.get('include_sensitive') === 'true';
 
           if (includeSensitive) {
-            const { signature, timestamp } = extractHmacHeaders(req);
-            const validation = validateHmac(signature, orderId, timestamp);
+            const validation = validateHmac(req, 'GET', '/order', '');
 
             if (!validation.valid) {
               status = 401;
@@ -253,7 +252,7 @@ const server = serve({
           const searchParams = url.searchParams;
           const limit = searchParams.get('limit') ? parseInt(searchParams.get('limit')!) : 50;
           const offset = searchParams.get('offset') ? parseInt(searchParams.get('offset')!) : 0;
-          const status = searchParams.get('status') || undefined;
+          const orderStatus = searchParams.get('status') || undefined;
           const sellToken = searchParams.get('sellToken') || undefined;
           const buyToken = searchParams.get('buyToken') || undefined;
 
@@ -261,9 +260,7 @@ const server = serve({
           const includeSensitive = searchParams.get('include_sensitive') === 'true';
 
           if (includeSensitive) {
-            const { signature, timestamp } = extractHmacHeaders(req);
-            const dataToSign = `list_orders:${status || 'all'}:${sellToken || 'any'}:${buyToken || 'any'}`;
-            const validation = validateHmac(signature, dataToSign, timestamp);
+            const validation = validateHmac(req, 'GET', '/orders', '');
 
             if (!validation.valid) {
               status = 401;
@@ -278,7 +275,7 @@ const server = serve({
           }
 
           // Try Redis cache first (only for non-sensitive requests with no pagination)
-          const cacheKey = cacheKeys.ordersList({ status, sellToken, buyToken });
+          const cacheKey = cacheKeys.ordersList({ status: orderStatus, sellToken, buyToken });
           let orders, totalCount;
 
           if (!includeSensitive && offset === 0) {
@@ -294,14 +291,14 @@ const server = serve({
           // Cache miss - fetch from database
           if (!orders) {
             orders = await db.getOrders({
-              status,
+              status: orderStatus,
               limit,
               offset,
               sellToken,
               buyToken
             });
 
-            totalCount = await db.getOrderCount(status);
+            totalCount = await db.getOrderCount(orderStatus);
 
             // Cache the result (only for first page)
             if (offset === 0 && !includeSensitive) {
@@ -367,8 +364,7 @@ const server = serve({
           const orderData = JSON.parse(body);
 
           // Validate HMAC signature for order creation
-          const { signature, timestamp } = extractHmacHeaders(req);
-          const validation = validateHmac(signature, body, timestamp);
+          const validation = validateHmac(req, 'POST', '/order', body);
 
           if (!validation.valid) {
             status = 401;
@@ -477,8 +473,7 @@ const server = serve({
           }
 
           // Validate HMAC signature for order deletion
-          const { signature, timestamp } = extractHmacHeaders(req);
-          const validation = validateHmac(signature, orderId, timestamp);
+          const validation = validateHmac(req, 'DELETE', '/order', '');
 
           if (!validation.valid) {
             status = 401;
