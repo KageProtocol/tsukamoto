@@ -44,6 +44,7 @@ export default function Home() {
   const [filters, setFilters] = useState({
     sell: "",
     buy: "",
+    status: "",
     page: 0,
     pageSize: 10,
   });
@@ -78,6 +79,31 @@ export default function Home() {
   const [showPortfolio, setShowPortfolio] = useState(false);
   const [portfolioKey, setPortfolioKey] = useState(0); // Force re-render of portfolio
   const { confirm, ConfirmDialogComponent } = useConfirmDialog();
+
+  // Live price updates for order creation form
+  useEffect(() => {
+    // Initial price load
+    if (orderParams.sellToken) {
+      loadUsdHint(orderParams.sellToken, setSellUsd);
+    }
+    if (orderParams.buyToken) {
+      loadUsdHint(orderParams.buyToken, setBuyUsd);
+    }
+
+    // Set up 30-second interval for live updates
+    const priceInterval = setInterval(() => {
+      if (orderParams.sellToken) {
+        loadUsdHint(orderParams.sellToken, setSellUsd);
+      }
+      if (orderParams.buyToken) {
+        loadUsdHint(orderParams.buyToken, setBuyUsd);
+      }
+    }, 30000);
+
+    // Cleanup interval on unmount or when tokens change
+    return () => clearInterval(priceInterval);
+  }, [orderParams.sellToken, orderParams.buyToken]);
+
   const copy = async (text: string) => {
     try {
       await navigator.clipboard.writeText(text);
@@ -94,6 +120,7 @@ export default function Home() {
       const qs = new URLSearchParams();
       if (filters.sell) qs.set("sell_token_address", filters.sell);
       if (filters.buy) qs.set("buy_token_address", filters.buy);
+      if (filters.status) qs.set("status", filters.status);
       qs.set("limit", String(filters.pageSize));
       qs.set("offset", String(filters.page * filters.pageSize));
       const res = await fetch(`${apiUrl}?${qs.toString()}`);
@@ -1068,6 +1095,27 @@ export default function Home() {
                 </button>
               ))}
             </div>
+            {activeTab !== "history" && (
+              <div style={{ marginBottom: 16, display: "flex", gap: 12, alignItems: "center" }}>
+                <label style={{ fontSize: 13, opacity: 0.75 }}>Filter by status:</label>
+                <select
+                  className="input"
+                  style={{ width: 150 }}
+                  value={filters.status}
+                  onChange={(e) => {
+                    setFilters({ ...filters, status: e.target.value, page: 0 });
+                    fetchOrders();
+                  }}
+                >
+                  <option value="">All</option>
+                  <option value="open">Open</option>
+                  <option value="pending">Pending</option>
+                  <option value="filled">Filled</option>
+                  <option value="cancelled">Cancelled</option>
+                  <option value="expired">Expired</option>
+                </select>
+              </div>
+            )}
             {renderTabContent()}
           </div>
         </div>
