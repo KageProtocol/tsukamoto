@@ -57,6 +57,7 @@ export function validateHmac(
 
   // Validate timestamp
   const ts = parseInt(timestamp);
+  
   if (isNaN(ts)) {
     return { valid: false, error: 'Invalid timestamp' };
   }
@@ -74,6 +75,12 @@ export function validateHmac(
 
   console.log('[HMAC] Generating expected signature...');
   console.log('[HMAC] Payload to sign:', { method, path, timestamp, bodyLength: body.length });
+
+  // Log the actual payload string being signed for debugging
+  const payload = [method.toUpperCase(), path, timestamp, body].join('\n');
+  console.log('[HMAC] Full payload (first 200 chars):', payload.substring(0, 200));
+  console.log('[HMAC] Body first 100 chars:', body.substring(0, 100));
+
   // Generate expected signature
   const expected = generateHmac(method, path, timestamp, body);
   console.log('[HMAC] Expected signature:', expected.substring(0, 20) + '...');
