@@ -48,7 +48,7 @@ export async function GET(req: Request) {
         {
           symbol: "USDC",
           address: usdcAddress,
-          balance: formatBalance(cached.usdc, 6),
+          balance: formatBalance(cached.usdc, 18),
           balanceRaw: cached.usdc,
         },
       ],
@@ -107,7 +107,7 @@ export async function GET(req: Request) {
         {
           symbol: "USDC",
           address: usdcAddress,
-          balance: formatBalance(result.usdcBalance.toString(), 6),
+          balance: formatBalance(result.usdcBalance.toString(), 18),
           balanceRaw: result.usdcBalance.toString(),
         },
       ],
@@ -130,7 +130,7 @@ export async function GET(req: Request) {
           {
             symbol: "USDC",
             address: usdcAddress,
-            balance: formatBalance(cached.usdc, 6),
+            balance: formatBalance(cached.usdc, 18),
             balanceRaw: cached.usdc,
           },
         ],

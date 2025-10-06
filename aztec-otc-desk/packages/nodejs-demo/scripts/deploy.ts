@@ -35,9 +35,28 @@ const main = async () => {
     writeFileSync(filepath, JSON.stringify(deployments, null, 2));
     console.log(`Deployments written to ${filepath}`);
 
-    console.log("\n🔄 Syncing addresses to configuration files...");
-    console.log("⚠️  Run 'bun run sync:deployments' to update .env files");
-    console.log("   Then restart your Next.js dev server!\n");
+    // Auto-sync for development (can be disabled for testnet/production)
+    const AUTO_SYNC = process.env.AUTO_SYNC_DEPLOYMENTS !== 'false';
+
+    if (AUTO_SYNC) {
+        console.log("\n🔄 Auto-syncing addresses to configuration files...");
+        try {
+            // Import and run sync script
+            const { execSync } = await import("child_process");
+            execSync("bun run sync:deployments", {
+                stdio: "inherit",
+                cwd: __dirname + "/.."
+            });
+            console.log("✅ Addresses synced! Restart your Next.js dev server to apply changes.\n");
+        } catch (error) {
+            console.error("⚠️  Auto-sync failed:", error);
+            console.log("   Run 'bun run sync:deployments' manually\n");
+        }
+    } else {
+        console.log("\n⚠️  Auto-sync disabled (AUTO_SYNC_DEPLOYMENTS=false)");
+        console.log("   Run 'bun run sync:deployments' to update .env files");
+        console.log("   Then restart your Next.js dev server!\n");
+    }
 }
 
 main();
