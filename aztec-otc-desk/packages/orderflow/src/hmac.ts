@@ -35,12 +35,17 @@ export function validateHmac(
   body: string,
   maxAge: number = 300
 ): { valid: boolean; error?: string } {
+  console.log('[HMAC] Starting validation for', method, path);
+
   if (!HMAC_SECRET) {
+    console.log('[HMAC] No secret configured');
     return { valid: false, error: 'HMAC secret not configured' };
   }
 
   const signature = req.headers.get('x-signature');
   const timestamp = req.headers.get('x-timestamp');
+
+  console.log('[HMAC] Headers:', { signature: signature?.substring(0, 10) + '...', timestamp });
 
   if (!signature) {
     return { valid: false, error: 'Missing HMAC signature' };
@@ -67,8 +72,12 @@ export function validateHmac(
     return { valid: false, error: 'Signature timestamp is in the future' };
   }
 
+  console.log('[HMAC] Generating expected signature...');
+  console.log('[HMAC] Payload to sign:', { method, path, timestamp, bodyLength: body.length });
   // Generate expected signature
   const expected = generateHmac(method, path, timestamp, body);
+  console.log('[HMAC] Expected signature:', expected.substring(0, 20) + '...');
+  console.log('[HMAC] Received signature:', signature.substring(0, 20) + '...');
 
   // Timing-safe comparison to prevent timing attacks
   try {
@@ -76,12 +85,16 @@ export function validateHmac(
     const expectedBuffer = Buffer.from(expected, 'hex');
 
     if (signatureBuffer.length !== expectedBuffer.length) {
+      console.log('[HMAC] Length mismatch');
       return { valid: false, error: 'Invalid signature format' };
     }
 
+    console.log('[HMAC] Performing timing-safe comparison...');
     const isValid = timingSafeEqual(signatureBuffer, expectedBuffer);
+    console.log('[HMAC] Comparison complete, valid:', isValid);
     return isValid ? { valid: true } : { valid: false, error: 'Invalid signature' };
   } catch (err) {
+    console.log('[HMAC] Validation error:', err);
     return { valid: false, error: 'Signature validation error' };
   }
 }
