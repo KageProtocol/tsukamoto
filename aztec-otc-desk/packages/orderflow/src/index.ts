@@ -367,6 +367,7 @@ const server = serve({
           const validation = validateHmac(req, 'POST', '/order', body);
 
           if (!validation.valid) {
+            console.log('[Server] HMAC validation failed:', validation.error);
             status = 401;
             return new Response(JSON.stringify({
               success: false,
@@ -376,6 +377,7 @@ const server = serve({
               headers: { "Content-Type": "application/json" }
             });
           }
+          console.log('[Server] HMAC validation passed!');
 
           // Create order in database
           const order = await db.createOrder({

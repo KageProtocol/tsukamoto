@@ -23,6 +23,8 @@ const sign = (method: string, path: string, body: string, secret: string) => {
   const ts = Math.floor(Date.now() / 1000).toString();
   const payload = [method.toUpperCase(), path, ts, body].join("\n");
   const sig = crypto.createHmac("sha256", secret).update(payload).digest("hex");
+  console.log('[Client HMAC] Signing:', { method: method.toUpperCase(), path, ts, bodyLength: body.length });
+  console.log('[Client HMAC] Signature:', sig.substring(0, 20) + '...');
   return { ts, sig };
 };
 
