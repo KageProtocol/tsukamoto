@@ -104,6 +104,58 @@ export default function Home() {
     return () => clearInterval(priceInterval);
   }, [orderParams.sellToken, orderParams.buyToken]);
 
+  // Auto-calculate market price when sell amount changes
+  useEffect(() => {
+    const autoCalc = async () => {
+      if (!orderParams.sellToken || !orderParams.buyToken || !orderParams.sellAmount) {
+        return;
+      }
+
+      const amount = orderParams.sellAmount;
+      if (isNaN(Number(amount)) || Number(amount) <= 0) {
+        return;
+      }
+
+      const fromToken = tokenOptions.find(t => t.address === orderParams.sellToken);
+      const toToken = tokenOptions.find(t => t.address === orderParams.buyToken);
+
+      if (!fromToken || !toToken) return;
+
+      try {
+        const [fromPriceRes, toPriceRes] = await Promise.all([
+          fetch(`/api/price?ticker=${fromToken.ticker}`),
+          fetch(`/api/price?ticker=${toToken.ticker}`)
+        ]);
+
+        if (!fromPriceRes.ok || !toPriceRes.ok) return;
+
+        const [fromPriceData, toPriceData] = await Promise.all([
+          fromPriceRes.json(),
+          toPriceRes.json()
+        ]);
+
+        if (fromPriceData.success && toPriceData.success) {
+          const fromPrice = fromPriceData.price;
+          const toPrice = toPriceData.price;
+
+          const totalValue = Number(amount) * fromPrice;
+          const calculatedAmount = (totalValue / toPrice).toFixed(4);
+
+          setOrderParams(prev => ({ ...prev, buyAmount: calculatedAmount }));
+        }
+      } catch {
+        // Silently fail for auto-calculation
+      }
+    };
+
+    // Debounce the calculation
+    const timer = setTimeout(() => {
+      autoCalc();
+    }, 500);
+
+    return () => clearTimeout(timer);
+  }, [orderParams.sellToken, orderParams.buyToken, orderParams.sellAmount]);
+
   const copy = async (text: string) => {
     try {
       await navigator.clipboard.writeText(text);
@@ -432,15 +484,17 @@ export default function Home() {
                           const message = line.replace(/^data: /, "");
                           lastMessage = message;
 
-                          // Update action message to show progress
+                          // Update action message to show progress (hide done: messages)
                           if (message && !message.startsWith("done:")) {
                             setActionMsg(message.slice(0, 150));
                           }
 
-                          // Check for exit code
+                          // Check for exit code (don't display done: messages)
                           if (message.startsWith("done:")) {
                             const code = message.match(/done: (\d+)/)?.[1];
                             exitCode = code ? parseInt(code) : null;
+                            // Clear the action message when done
+                            setActionMsg(null);
                           }
 
                           // Success indicators
@@ -459,13 +513,18 @@ export default function Home() {
                         }
                       }
 
-                      // Success = exit 0 AND (success message OR no errors)
-                      const isSuccess = exitCode === 0 && (hasSuccess || !hasError);
+                      // Success = exit 0 AND (success message OR no errors) AND no balance issues
+                      const hasBalanceIssue = lastMessage.includes("Insufficient balance") ||
+                                             lastMessage.includes("insufficient balance") ||
+                                             lastMessage.includes("balance too low");
+                      const isSuccess = exitCode === 0 && (hasSuccess || !hasError) && !hasBalanceIssue;
 
                       if (isSuccess) {
                         await fetchOrders();
                         setBalanceRefreshing(true);
-                        setActionMsg("Fill completed successfully. Order closed.");
+                        setPortfolioKey(prev => prev + 1); // Force portfolio refresh
+                        // Clear action message on success - don't show "done:" messages
+                        setTimeout(() => setActionMsg(null), 100);
                         toast.success("Order filled successfully!");
 
                         transactionStorage.addTransaction({
@@ -484,13 +543,17 @@ export default function Home() {
                         // Refresh balances after 2s
                         setTimeout(() => setBalanceRefreshing(false), 2000);
                       } else {
+                        // Filter out "done:" messages from error display
+                        const cleanMessage = lastMessage.startsWith("done:") ? "" : lastMessage;
                         const errorMsg = lastMessage.includes("Insufficient balance")
                           ? "Insufficient balance to fill order"
-                          : hasError
-                          ? lastMessage.substring(0, 150)
-                          : `Fill failed (exit code: ${exitCode ?? 'unknown'})`;
+                          : hasError && cleanMessage
+                          ? cleanMessage.substring(0, 150)
+                          : exitCode !== 0
+                          ? `Fill failed - please check your balance and try again`
+                          : "Fill operation failed";
                         setActionMsg(errorMsg);
-                        toast.error("Fill operation failed");
+                        toast.error(errorMsg);
                         await fetchOrders();
                       }
                     } catch (e) {
@@ -770,6 +833,7 @@ export default function Home() {
       // Refresh orders list and trigger balance refresh
       await fetchOrders();
       setBalanceRefreshing(true);
+      setPortfolioKey(prev => prev + 1); // Force portfolio refresh
       setTimeout(() => setBalanceRefreshing(false), 3000);
 
     } catch (e) {
@@ -880,15 +944,28 @@ export default function Home() {
             {orderErrors.sellAmount && <p style={{ color: "#ef4444", fontSize: 12, margin: "4px 0 0 0" }}>{orderErrors.sellAmount}</p>}
           </div>
 
-          {/* Market Price Button */}
+          {/* Auto-calculation info - prices update automatically */}
           {orderParams.sellToken && orderParams.buyToken && orderParams.sellAmount && (
-            <div style={{ marginBottom: 16 }}>
+            <div style={{
+              marginBottom: 16,
+              padding: "8px 12px",
+              background: "#1a1a2e",
+              borderRadius: 6,
+              border: "1px solid #2a2a3e",
+              fontSize: 11,
+              color: "#9aa3ad",
+              display: "flex",
+              alignItems: "center",
+              gap: 8
+            }}>
+              <span style={{ color: "#10b981" }}>●</span>
+              <span>Prices auto-update every 10s</span>
               <button
                 className="btn btn-sm"
                 onClick={() => calculateMarketPrice("sell")}
-                style={{ width: "100%", fontSize: 11, padding: "6px 8px" }}
+                style={{ marginLeft: "auto", fontSize: 10, padding: "4px 8px" }}
               >
-                📈 Calculate at Market Price
+                🔄 Refresh Now
               </button>
             </div>
           )}

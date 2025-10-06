@@ -41,8 +41,27 @@ export function formatTokenAmount(address: string, raw: string): string {
     const base = BigInt(10) ** BigInt(decimals);
     const whole = bn / base;
     const frac = bn % base;
-    const fracStr = frac.toString().padStart(decimals, "0").slice(0, 4);
-    return `${whole.toString()}.${fracStr}${symbol ? ` ${symbol}` : ""}`;
+
+    // Format whole part with commas for readability
+    const wholeStr = whole.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+
+    // Format fractional part more cleanly
+    if (frac === BigInt(0)) {
+      // No decimal places if it's a whole number
+      return `${wholeStr}${symbol ? ` ${symbol}` : ""}`;
+    }
+
+    // Show up to 4 significant decimal places, trimming trailing zeros
+    const fracStr = frac.toString().padStart(decimals, "0");
+    let significantFrac = fracStr.slice(0, 4);
+    // Trim trailing zeros
+    significantFrac = significantFrac.replace(/0+$/, "");
+
+    if (significantFrac === "") {
+      return `${wholeStr}${symbol ? ` ${symbol}` : ""}`;
+    }
+
+    return `${wholeStr}.${significantFrac}${symbol ? ` ${symbol}` : ""}`;
   } catch {
     return raw;
   }
