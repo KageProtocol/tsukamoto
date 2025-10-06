@@ -3,6 +3,7 @@ import { register, Counter, Histogram, Gauge } from "prom-client";
 import db from "./db";
 import { eventBroadcaster } from "./events";
 import { initRedis, cache, pubsub, cacheKeys, CACHE_TTL, OrderEventPayload } from "./redis";
+import { validateHmac, extractHmacHeaders } from "./hmac";
 
 const PORT = process.env.PORT || 3001;
 
@@ -174,8 +175,24 @@ const server = serve({
             });
           }
 
-          // TODO: Validate HMAC signature here before allowing include_sensitive
+          // Validate HMAC signature before allowing sensitive data
           const includeSensitive = url.searchParams.get('include_sensitive') === 'true';
+
+          if (includeSensitive) {
+            const { signature, timestamp } = extractHmacHeaders(req);
+            const validation = validateHmac(signature, orderId, timestamp);
+
+            if (!validation.valid) {
+              status = 401;
+              return new Response(JSON.stringify({
+                success: false,
+                message: "Unauthorized: " + (validation.error || "Invalid HMAC signature")
+              }), {
+                status: 401,
+                headers: { "Content-Type": "application/json" }
+              });
+            }
+          }
 
           // Get order from database
           const order = await db.getOrderById(orderId);
@@ -240,8 +257,25 @@ const server = serve({
           const sellToken = searchParams.get('sellToken') || undefined;
           const buyToken = searchParams.get('buyToken') || undefined;
 
-          // TODO: Validate HMAC signature here before allowing include_sensitive
+          // Validate HMAC signature before allowing sensitive data
           const includeSensitive = searchParams.get('include_sensitive') === 'true';
+
+          if (includeSensitive) {
+            const { signature, timestamp } = extractHmacHeaders(req);
+            const dataToSign = `list_orders:${status || 'all'}:${sellToken || 'any'}:${buyToken || 'any'}`;
+            const validation = validateHmac(signature, dataToSign, timestamp);
+
+            if (!validation.valid) {
+              status = 401;
+              return new Response(JSON.stringify({
+                success: false,
+                message: "Unauthorized: " + (validation.error || "Invalid HMAC signature")
+              }), {
+                status: 401,
+                headers: { "Content-Type": "application/json" }
+              });
+            }
+          }
 
           // Try Redis cache first (only for non-sensitive requests with no pagination)
           const cacheKey = cacheKeys.ordersList({ status, sellToken, buyToken });
@@ -332,7 +366,20 @@ const server = serve({
           const body = await req.text();
           const orderData = JSON.parse(body);
 
-          // TODO: Validate HMAC signature here
+          // Validate HMAC signature for order creation
+          const { signature, timestamp } = extractHmacHeaders(req);
+          const validation = validateHmac(signature, body, timestamp);
+
+          if (!validation.valid) {
+            status = 401;
+            return new Response(JSON.stringify({
+              success: false,
+              message: "Unauthorized: " + (validation.error || "Invalid HMAC signature")
+            }), {
+              status: 401,
+              headers: { "Content-Type": "application/json" }
+            });
+          }
 
           // Create order in database
           const order = await db.createOrder({
@@ -429,7 +476,20 @@ const server = serve({
             });
           }
 
-          // TODO: Validate HMAC signature here
+          // Validate HMAC signature for order deletion
+          const { signature, timestamp } = extractHmacHeaders(req);
+          const validation = validateHmac(signature, orderId, timestamp);
+
+          if (!validation.valid) {
+            status = 401;
+            return new Response(JSON.stringify({
+              success: false,
+              message: "Unauthorized: " + (validation.error || "Invalid HMAC signature")
+            }), {
+              status: 401,
+              headers: { "Content-Type": "application/json" }
+            });
+          }
 
           // Update order status to filled
           const updatedOrder = await db.updateOrderStatus(orderId, 'filled', 'cli');
