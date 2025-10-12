@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useWallet } from "@/lib/wallet-provider";
 import { toast } from "./ToastStack";
+import { Plug, MapPin, Lock, Store, User, FlaskConical, X, Loader2 } from "lucide-react";
 
 export default function WalletConnect() {
   const { address, isConnected, connect, disconnect, loading } = useWallet();
@@ -32,9 +33,9 @@ export default function WalletConnect() {
 
   // Test accounts for sandbox
   const testAccounts = [
-    { index: 0, name: "Seller Account", icon: "🏪" },
-    { index: 1, name: "Buyer Account", icon: "👤" },
-    { index: 2, name: "Test Account 3", icon: "🧪" },
+    { index: 0, name: "Seller Account", icon: <Store size={18} /> },
+    { index: 1, name: "Buyer Account", icon: <User size={18} /> },
+    { index: 2, name: "Test Account 3", icon: <FlaskConical size={18} /> },
   ];
 
   if (isConnected && address) {
@@ -77,7 +78,15 @@ export default function WalletConnect() {
         onClick={() => setIsOpen(true)}
         disabled={loading}
       >
-        {loading ? "Connecting..." : "🔌 Connect Wallet"}
+        {loading ? (
+          <>
+            <Loader2 size={16} className="animate-spin" /> Connecting...
+          </>
+        ) : (
+          <>
+            <Plug size={16} /> Connect Wallet
+          </>
+        )}
       </button>
 
       {isOpen && (
@@ -110,7 +119,7 @@ export default function WalletConnect() {
             >
               <h2 style={{ margin: 0 }}>Connect Wallet</h2>
               <button className="btn btn-ghost" onClick={() => setIsOpen(false)}>
-                ✕
+                <X size={20} />
               </button>
             </div>
 
@@ -123,8 +132,8 @@ export default function WalletConnect() {
                 border: "1px solid #1e293b",
               }}
             >
-              <div style={{ fontSize: 12, color: "#64748b", marginBottom: 4 }}>
-                📍 Sandbox Mode
+              <div style={{ fontSize: 12, color: "#64748b", marginBottom: 4, display: "flex", alignItems: "center", gap: 4 }}>
+                <MapPin size={14} /> Sandbox Mode
               </div>
               <div style={{ fontSize: 11, color: "#475569" }}>
                 Select a test account from the Aztec sandbox to get started.
@@ -166,7 +175,7 @@ export default function WalletConnect() {
                         Sandbox Account {account.index}
                       </div>
                     </div>
-                    {loading && <div style={{ fontSize: 12, color: "#64748b" }}>⏳</div>}
+                    {loading && <Loader2 size={16} className="animate-spin" style={{ color: "#64748b" }} />}
                   </div>
                 </button>
               ))}
@@ -181,8 +190,8 @@ export default function WalletConnect() {
                 border: "1px solid #1e293b",
               }}
             >
-              <div style={{ fontSize: 12, color: "#64748b", marginBottom: 4 }}>
-                🔒 Privacy First
+              <div style={{ fontSize: 12, color: "#64748b", marginBottom: 4, display: "flex", alignItems: "center", gap: 4 }}>
+                <Lock size={14} /> Privacy First
               </div>
               <div style={{ fontSize: 11, color: "#475569" }}>
                 Your wallet uses zero-knowledge proofs to keep all transactions

@@ -3,6 +3,17 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { formatTokenAmount } from "../lib/tokens";
 import Chart from "./components/Chart";
+import {
+  Wallet,
+  Coins,
+  RefreshCw,
+  Trash2,
+  FileText,
+  Download,
+  Info,
+  Plug,
+  TrendingUp
+} from "lucide-react";
 import { OrderListSkeleton } from "./components/Skeleton";
 import TokenBadge from "./components/TokenBadge";
 import TokenSelect from "./components/TokenSelect";
@@ -14,7 +25,7 @@ import { OrderStatusWithContext } from "./components/OrderStatusBadge";
 import { withErrorHandling, handleApiResponse, StreamToastThrottler } from "../lib/errorHandler";
 import WalletConnect from "./components/WalletConnect";
 import { useWallet } from "@/lib/wallet-provider";
-import { useOrderEvents, OrderEvent } from "@/lib/use-order-events";
+import { useOrderEvents } from "./hooks/useOrderEvents";
 
 type Order = {
   orderId: string;
@@ -37,6 +48,37 @@ export default function Home() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [actionMsg, setActionMsg] = useState<string | null>(null);
+
+  const apiUrl = process.env.NEXT_PUBLIC_OTC_API_URL || "http://localhost:3001";
+
+  // Real-time order updates via SSE
+  const { connected: sseConnected } = useOrderEvents({
+    onOrderCreated: (orderId, data) => {
+      console.log('[SSE] Order created:', orderId);
+      toast.success('New order available!');
+      fetchOrders(); // Refresh orders list
+    },
+    onOrderFilled: (orderId, data) => {
+      console.log('[SSE] Order filled:', orderId);
+      toast.success('Order filled!');
+      fetchOrders(); // Refresh orders list
+      setBalanceRefreshing(true);
+      setPortfolioKey(prev => prev + 1); // Force portfolio refresh
+    },
+    onOrderCancelled: (orderId, data) => {
+      console.log('[SSE] Order cancelled:', orderId);
+      toast.info('Order cancelled');
+      fetchOrders(); // Refresh orders list
+    },
+    onOrderUpdated: (orderId, data) => {
+      console.log('[SSE] Order updated:', orderId);
+      fetchOrders(); // Refresh orders list
+    },
+    onConnected: () => {
+      console.log('[SSE] Connected to real-time updates');
+    },
+    apiUrl
+  });
   const [executingId, setExecutingId] = useState<string | null>(null);
   const [fetchingDetailsId, setFetchingDetailsId] = useState<string | null>(null);
   const [cancellingId, setCancellingId] = useState<string | null>(null);
@@ -45,8 +87,11 @@ export default function Home() {
     sell: "",
     buy: "",
     status: "",
+    sellToken: undefined as string | undefined,
+    buyToken: undefined as string | undefined,
+    search: undefined as string | undefined,
     page: 0,
-    pageSize: 10,
+    limit: 10,
   });
   const apiUrl = "/api/orders"; // use internal proxy to avoid CORS
   const [activeTab, setActiveTab] = useState<
@@ -290,6 +335,21 @@ export default function Home() {
   const findToken = (addr: string) =>
     tokenOptions.find((t) => t.address?.toLowerCase() === addr?.toLowerCase());
 
+  // Client-side search filter
+  const applySearch = (orderList: Order[]) => {
+    if (!filters.search || filters.search.trim() === "") {
+      return orderList;
+    }
+
+    const searchLower = filters.search.toLowerCase().trim();
+    return orderList.filter(o =>
+      o.orderId.toLowerCase().includes(searchLower) ||
+      o.escrowAddress.toLowerCase().includes(searchLower) ||
+      (o.sellTokenAddress && o.sellTokenAddress.toLowerCase().includes(searchLower)) ||
+      (o.buyTokenAddress && o.buyTokenAddress.toLowerCase().includes(searchLower))
+    );
+  };
+
   const renderTabContent = () => {
     if (activeTab === "history") {
       return (
@@ -306,10 +366,13 @@ export default function Home() {
 
     if (activeTab === "received") {
       // Only show open/pending orders in available section
-      const receivedOrders = orders.filter(o => {
+      let receivedOrders = orders.filter(o => {
         const status = o.status?.toLowerCase();
         return !status || status === 'open' || status === 'pending';
       });
+
+      // Apply search filter
+      receivedOrders = applySearch(receivedOrders);
 
       return (
         <div className="section">
@@ -323,13 +386,15 @@ export default function Home() {
     }
 
     // Default: submitted orders (orders you created) - show all
+    let submittedOrders = applySearch(orders);
+
     return (
       <div className="section">
         <h3 style={{ margin: "0 0 16px 0" }}>Your Orders</h3>
         <p style={{ color: "#9aa3ad", marginBottom: 16 }}>
           Orders you created
         </p>
-        {renderOrdersList(orders, "submitted")}
+        {renderOrdersList(submittedOrders, "submitted")}
       </div>
     );
   };
@@ -353,7 +418,7 @@ export default function Home() {
       return (
         <div style={{ textAlign: "center", padding: "40px 20px" }}>
           <div style={{ fontSize: 48, marginBottom: 16 }}>
-            {type === "submitted" ? "📝" : "📥"}
+            {type === "submitted" ? <FileText size={16} /> : <Download size={16} />}
           </div>
           <h3 style={{ margin: "0 0 8px 0", color: "#9aa3ad" }}>
             {type === "submitted" ? "No orders created" : "No orders available"}
@@ -583,7 +648,7 @@ export default function Home() {
                     fontSize: 13,
                     color: "#9aa3ad"
                   }}>
-                    ℹ️ This is your order - switch to buyer account to execute
+                    <Info size={14} style={{ display: "inline", marginRight: 4 }} /> This is your order - switch to buyer account to execute
                   </div>
                 )}
               </>
@@ -862,7 +927,7 @@ export default function Home() {
             onClick={() => setShowPortfolio(true)}
             style={{ display: "flex", alignItems: "center", gap: 4 }}
           >
-            💰 Portfolio
+            <Coins size={16} /> Portfolio
           </button>
           <WalletConnect />
           <span className="pill">Sandbox</span>
@@ -965,7 +1030,7 @@ export default function Home() {
                 onClick={() => calculateMarketPrice("sell")}
                 style={{ marginLeft: "auto", fontSize: 10, padding: "4px 8px" }}
               >
-                🔄 Refresh Now
+                <RefreshCw size={12} style={{ marginRight: 4 }} /> Refresh Now
               </button>
             </div>
           )}
@@ -1063,7 +1128,7 @@ export default function Home() {
                 textAlign: "center"
               }}>
                 <div style={{ fontSize: 12, color: "#64748b", marginBottom: 4 }}>
-                  🔌 Wallet Required
+                  <Plug size={14} style={{ marginRight: 4 }} /> Wallet Required
                 </div>
                 <div style={{ fontSize: 11, color: "#475569" }}>
                   Connect your wallet above to create orders
@@ -1089,7 +1154,7 @@ export default function Home() {
               disabled={loading}
               style={{ flex: 1, fontSize: 10, padding: "4px 8px" }}
             >
-              {loading ? "..." : "🔄"}
+              {loading ? "..." : <RefreshCw size={14} />}
             </button>
             <button
               className="btn btn-sm"
@@ -1109,7 +1174,7 @@ export default function Home() {
               }}
               style={{ flex: 1, fontSize: 10, padding: "4px 8px" }}
             >
-              🗑️
+              <Trash2 size={14} />
             </button>
           </div>
         </div>
@@ -1173,24 +1238,102 @@ export default function Home() {
               ))}
             </div>
             {activeTab !== "history" && (
-              <div style={{ marginBottom: 16, display: "flex", gap: 12, alignItems: "center" }}>
-                <label style={{ fontSize: 13, opacity: 0.75 }}>Filter by status:</label>
-                <select
-                  className="input"
-                  style={{ width: 150 }}
-                  value={filters.status}
-                  onChange={(e) => {
-                    setFilters({ ...filters, status: e.target.value, page: 0 });
-                    fetchOrders();
-                  }}
-                >
-                  <option value="">All</option>
-                  <option value="open">Open</option>
-                  <option value="pending">Pending</option>
-                  <option value="filled">Filled</option>
-                  <option value="cancelled">Cancelled</option>
-                  <option value="expired">Expired</option>
-                </select>
+              <div style={{ marginBottom: 16 }}>
+                <div style={{ fontSize: 13, opacity: 0.75, marginBottom: 8 }}>Advanced Filters</div>
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: 12 }}>
+                  {/* Status Filter */}
+                  <div>
+                    <label style={{ fontSize: 11, opacity: 0.6, display: "block", marginBottom: 4 }}>Status</label>
+                    <select
+                      className="input"
+                      style={{ width: "100%", fontSize: 12 }}
+                      value={filters.status}
+                      onChange={(e) => {
+                        setFilters({ ...filters, status: e.target.value, page: 0 });
+                        fetchOrders();
+                      }}
+                    >
+                      <option value="">All Statuses</option>
+                      <option value="open">Open</option>
+                      <option value="pending">Pending</option>
+                      <option value="filled">Filled</option>
+                      <option value="cancelled">Cancelled</option>
+                      <option value="expired">Expired</option>
+                    </select>
+                  </div>
+
+                  {/* Sell Token Filter */}
+                  <div>
+                    <label style={{ fontSize: 11, opacity: 0.6, display: "block", marginBottom: 4 }}>Sell Token</label>
+                    <select
+                      className="input"
+                      style={{ width: "100%", fontSize: 12 }}
+                      value={filters.sellToken || ""}
+                      onChange={(e) => {
+                        setFilters({ ...filters, sellToken: e.target.value || undefined, page: 0 });
+                        fetchOrders();
+                      }}
+                    >
+                      <option value="">All Tokens</option>
+                      {tokenOptions.map(t => (
+                        <option key={t.address} value={t.address}>{t.label}</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  {/* Buy Token Filter */}
+                  <div>
+                    <label style={{ fontSize: 11, opacity: 0.6, display: "block", marginBottom: 4 }}>Buy Token</label>
+                    <select
+                      className="input"
+                      style={{ width: "100%", fontSize: 12 }}
+                      value={filters.buyToken || ""}
+                      onChange={(e) => {
+                        setFilters({ ...filters, buyToken: e.target.value || undefined, page: 0 });
+                        fetchOrders();
+                      }}
+                    >
+                      <option value="">All Tokens</option>
+                      {tokenOptions.map(t => (
+                        <option key={t.address} value={t.address}>{t.label}</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  {/* Search Input */}
+                  <div>
+                    <label style={{ fontSize: 11, opacity: 0.6, display: "block", marginBottom: 4 }}>Search</label>
+                    <input
+                      type="text"
+                      className="input"
+                      placeholder="Order ID or Escrow..."
+                      style={{ width: "100%", fontSize: 12 }}
+                      value={filters.search || ""}
+                      onChange={(e) => {
+                        setFilters({ ...filters, search: e.target.value || undefined, page: 0 });
+                      }}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          fetchOrders();
+                        }
+                      }}
+                    />
+                  </div>
+                </div>
+
+                {/* Clear Filters Button */}
+                {(filters.status || filters.sellToken || filters.buyToken || filters.search) && (
+                  <button
+                    className="btn btn-sm"
+                    style={{ marginTop: 12, fontSize: 11 }}
+                    onClick={() => {
+                      setFilters({ status: "", page: 0, limit: 10 });
+                      fetchOrders();
+                    }}
+                  >
+                    <RefreshCw size={12} style={{ marginRight: 4 }} /> Clear All Filters
+                  </button>
+                )}
               </div>
             )}
             {renderTabContent()}

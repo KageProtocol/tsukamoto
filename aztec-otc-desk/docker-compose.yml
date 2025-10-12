@@ -19,12 +19,15 @@ services:
       - TEST_ACCOUNTS=true
       - WS_BLOCK_CHECK_INTERVAL_MS=500
     command: start --sandbox
+    restart: unless-stopped
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8080/status"]
+      test: ["CMD-SHELL", "curl -f http://localhost:8080/status || exit 1"]
       interval: 30s
       timeout: 10s
-      retries: 5
-      start_period: 120s
+      retries: 10
+      start_period: 180s
+    volumes:
+      - aztec_data:/tmp
     networks:
       - aztec-network
 
@@ -172,6 +175,8 @@ volumes:
   prometheus_data:
     driver: local
   grafana_data:
+    driver: local
+  aztec_data:
     driver: local
 
 networks:
