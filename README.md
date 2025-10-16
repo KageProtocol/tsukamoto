@@ -2,7 +2,7 @@
 
 An Over-the-Counter trading desk built on the Aztec Network. Enables private, trustless token swaps. EXPERIMENTAL!
 
-![Tsukamoto OTC Desk](./assets/preview.png)
+![Tsukamoto OTC Desk](./aztec-otc-desk/assets/preview.png)
 
 ## 🚀 Quick Start
 
