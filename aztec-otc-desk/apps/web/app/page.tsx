@@ -49,7 +49,7 @@ export default function Home() {
   const [error, setError] = useState<string | null>(null);
   const [actionMsg, setActionMsg] = useState<string | null>(null);
 
-  const apiUrl = process.env.NEXT_PUBLIC_OTC_API_URL || "http://localhost:3001";
+  const sseApiUrl = process.env.NEXT_PUBLIC_OTC_API_URL || "http://localhost:3001";
 
   // Real-time order updates via SSE
   const { connected: sseConnected } = useOrderEvents({
@@ -77,7 +77,7 @@ export default function Home() {
     onConnected: () => {
       console.log('[SSE] Connected to real-time updates');
     },
-    apiUrl
+    apiUrl: sseApiUrl
   });
   const [executingId, setExecutingId] = useState<string | null>(null);
   const [fetchingDetailsId, setFetchingDetailsId] = useState<string | null>(null);
@@ -248,40 +248,6 @@ export default function Home() {
     setTransactions(transactionStorage.getHistory());
   };
 
-  // Handle real-time order events via SSE
-  const handleOrderEvent = (event: OrderEvent) => {
-    console.log('[Order Event]', event.type, event);
-
-    if (event.type === 'connected') {
-      console.log('[SSE] Connected to real-time order updates');
-      return;
-    }
-
-    // Refresh orders on any order event
-    if (event.type === 'order_created' ||
-        event.type === 'order_updated' ||
-        event.type === 'order_filled' ||
-        event.type === 'order_cancelled') {
-      fetchOrders();
-
-      // Trigger live balance update on order filled
-      if (event.type === 'order_filled') {
-        console.log('[Balance] Order filled - refreshing balances');
-        setPortfolioKey(prev => prev + 1); // Force portfolio to refetch
-        toast.success('Order filled - balances updated');
-      } else if (event.type === 'order_created') {
-        toast.info('New order created');
-      } else if (event.type === 'order_cancelled') {
-        toast.info('Order cancelled');
-      }
-    }
-  };
-
-  // Subscribe to real-time order events
-  useOrderEvents(handleOrderEvent, {
-    autoReconnect: true,
-    reconnectInterval: 3000
-  });
 
   useEffect(() => {
     fetchOrders();
@@ -934,9 +900,6 @@ export default function Home() {
         </div>
       </div>
       <div className="hero">Fast. Private. OTC on Aztec.</div>
-      <p className="muted">
-        Listing public orders from {apiUrl}. Click refresh to reload.
-      </p>
       <div className="row sticky" style={{ gap: 8 }}>
         <button className="btn" onClick={fetchOrders} disabled={loading}>
           {loading ? "Refreshing..." : "Refresh"}

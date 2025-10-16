@@ -125,8 +125,7 @@ export default function TransactionHistory({ transactions, onClearHistory }: Tra
   };
 
   const openTransactionScanner = (txHash: string) => {
-    // For Aztec, we'll use a generic blockchain explorer
-    // TODO: Update this URL when Aztec has official explorer
+    // Aztec block explorer integration
     const explorerUrl = `https://explorer.aztec.network/tx/${txHash}`;
     window.open(explorerUrl, '_blank', 'noopener,noreferrer');
   };

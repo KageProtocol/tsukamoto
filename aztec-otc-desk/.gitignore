@@ -52,7 +52,10 @@ out/
 # Additional security files
 *.secret
 *.credentials
-*secret*
-*credentials*
 deployment-keys/
 private-keys/
+
+# Backup files
+*.bak
+*.backup
+*~

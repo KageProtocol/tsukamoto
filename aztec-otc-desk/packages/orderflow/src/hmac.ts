@@ -12,6 +12,7 @@ if (!HMAC_SECRET || HMAC_SECRET.length < 32) {
  * @param path - Request path (e.g., "/order")
  * @param timestamp - Unix timestamp in seconds
  * @param body - Request body (empty string for GET/DELETE)
+ * 
  */
 export function generateHmac(method: string, path: string, timestamp: string, body: string): string {
   const payload = [method.toUpperCase(), path, timestamp, body].join('\n');

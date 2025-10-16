@@ -1,6 +1,8 @@
 # Tsukamoto Private OTC Desk
 
-An Over-the-Counter trading desk built on the Aztec Network. Enables private, trustless token swaps with enterprise-grade security and comprehensive monitoring. EXPERIMENTAL!
+An Over-the-Counter trading desk built on the Aztec Network. Enables private, trustless token swaps. EXPERIMENTAL!
+
+![Tsukamoto OTC Desk](./assets/preview.png)
 
 ## 🚀 Quick Start
 
